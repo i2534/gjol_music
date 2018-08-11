@@ -179,8 +179,8 @@ public class MXLReader implements EntityResolver {
         this.measure(new Fee(part.elementIterator("measure")));
     }
 
-    private void measure(Fee measure) {
-        for (Element me : measure) {
+    private void measure(Fee measures) {
+        for (Element me : measures) {
             String number = me.attributeValue("number");
             log.debug("Part number is {}", number);
 
@@ -193,34 +193,50 @@ public class MXLReader implements EntityResolver {
                 this.lastStaff = staff;
             }
 
-            Measure[] ms = new Measure[staff];
+            Measure[] column = new Measure[staff];
             for (int i = 0; i < staff; i++) {
-                ms[i] = new Measure();
-                this.parts[i].getMeasures().add(ms[i]);
+                column[i] = new Measure();
+                this.parts[i].getMeasures().add(column[i]);
             }
 
             for (Element ne : new Fee(me.elementIterator("note"))) {
                 Tuple<Note> tuple = this.note(ne);
 
-                int stf = tuple.getIndex();
+                int stf = tuple.getIndex();//staff index
                 Note note = tuple.getValue();
-                Measure m = ms[stf - 1];
+                Measure m = column[stf - 1];
                 List<Note> list = m.getNotes();
                 if (list == null) {
                     list = new ArrayList<Note>();
                     m.setNotes(list);
                 }
+
+                Note last = null;
                 if (list.isEmpty()) {
                     note.setStampIndex(0);
                 } else {
-                    Note last = list.get(list.size() - 1);
+                    last = list.get(list.size() - 1);
                     int i = last.getStampIndex();
                     DurationType type = last.getDurationType();
                     note.setStampIndex(i + 64 / type.val());
                 }
+
+                if (note.isChrod()) {
+                    if (last == null) {
+                        log.warn("First note is chrod ?");
+                    } else {
+                        List<Sign> ss = note.getPitch().getSigns();
+                        List<Sign> lss = last.getPitch().getSigns();
+                        lss.addAll(ss);
+                        last.setClassicPitchSignCount(this.size(lss));
+                        continue;
+                    }
+                }
+
+                note.setClassicPitchSignCount(this.size(note.getPitch().getSigns()));
                 list.add(note);
             }
-            for (Measure m : ms) {
+            for (Measure m : column) {
                 m.setNoteCount(this.size(m.getNotes()));
             }
         }
@@ -335,6 +351,10 @@ public class MXLReader implements EntityResolver {
     private Tuple<Note> note(Element ne) {
         Tuple<Note> tuple = new Tuple<Note>();
         Note note = new Note();
+        Pitch pitch = new Pitch();
+        ArrayList<Sign> list = new ArrayList<Sign>();
+        pitch.setSigns(list);
+        note.setPitch(pitch);
 
         String type = ne.elementTextTrim("type");
         if (type != null) {
@@ -345,6 +365,8 @@ public class MXLReader implements EntityResolver {
                 note.setDurationType(dt);
             }
         }
+
+        note.setChrod(ne.element("chord") != null);//和弦, GJM支持最多4个音
 
         int index = 1;
         String staff = ne.elementTextTrim("staff");
@@ -369,31 +391,17 @@ public class MXLReader implements EntityResolver {
             }
         }
 
-        Element rest = ne.element("rest");
-        if (rest != null) {//休止符    似乎gjm里没有全休止符....
+        if (ne.element("rest") != null) {//休止符    似乎gjm里没有全休止符....
             note.setRest(true);
 
             //FIXME 这里在MusicXml中,只要休止,就不要音符,但是gjm中需要...随便给一个普通C
-            Pitch pitch = new Pitch();
-
             Sign sign = new Sign();
             sign.setIndex(Sign.STANDARD_C);
             sign.setNumberedSign(1);
             sign.setPlayingPitchIndex(1);
             sign.setAlterantType(AlterantType.NoControl);
-
-            ArrayList<Sign> ss = new ArrayList<Sign>();
-            ss.add(sign);
-            pitch.setSigns(ss);
-
-            note.setPitch(pitch);
+            list.add(sign);
         } else {
-            Pitch pitch = new Pitch();
-
-            ArrayList<Sign> list = new ArrayList<Sign>();
-            pitch.setSigns(list);
-            note.setPitch(pitch);
-
             Sign sign = this.pitch(ne.element("pitch"));
             if (sign != null) {
                 list.add(sign);
@@ -410,8 +418,6 @@ public class MXLReader implements EntityResolver {
         }
         tuple.setIndex(index);
         tuple.setValue(note);
-
-        note.setClassicPitchSignCount(1);
 
         return tuple;
     }

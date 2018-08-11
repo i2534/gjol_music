@@ -40,6 +40,10 @@ public class Note implements GJM {
     private int classicPitchSignCount;
     @Rule("ClassicPitchSign")
     private Pitch pitch;
+    /**
+     * 是否是和弦音.仅仅对应MusicXML,和GJM无关
+     */
+    private boolean chrod;
 
     public Boolean isRest() {
         return rest;
@@ -103,5 +107,13 @@ public class Note implements GJM {
 
     public void setPitch(Pitch pitch) {
         this.pitch = pitch;
+    }
+
+    public boolean isChrod() {
+        return chrod;
+    }
+
+    public void setChrod(boolean chrod) {
+        this.chrod = chrod;
     }
 }

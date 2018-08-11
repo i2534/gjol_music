@@ -12,7 +12,7 @@ import java.io.IOException;
 public class MXL {
 
     public static void main(String[] args) throws DocumentException, IOException {
-        String name = "鸡妈妈和它的孩子们";
+        String name = args[0];
 
         MXLReader reader = new MXLReader();
         Notation notation = reader.read(new File("G:/notation/" + name + ".musicxml"));
@@ -21,6 +21,8 @@ public class MXL {
         NotationSerializer ns = new NotationSerializer(notation, new GJMWriter(new File("G:/notation/" + name + ".mxl.gjm")));
         ns.serialize();
         ns.close();
+
+        System.out.println(name + " OK");
     }
 
 }
