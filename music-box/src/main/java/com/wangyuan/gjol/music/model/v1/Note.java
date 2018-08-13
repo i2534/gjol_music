@@ -20,7 +20,7 @@ public class Note implements GJM {
     @Rule("IsDotted")
     private Boolean dotted;
     /**
-     * 延音标记
+     * 延音/连音标记
      */
     @Rule("TieType")
     private TieType tieType;

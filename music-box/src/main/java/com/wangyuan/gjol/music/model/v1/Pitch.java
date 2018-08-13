@@ -6,7 +6,7 @@ import com.wangyuan.gjol.music.util.Rule;
 import java.util.List;
 
 /**
- * 音组合
+ * 音
  */
 public class Pitch implements GJM {
 

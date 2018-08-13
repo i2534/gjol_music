@@ -22,6 +22,7 @@ public class StringFormat implements IFormat<String> {
         if (s == null) {
             return null;
         }
-        return "'" + s + "'";
+
+        return "'" + s.replace("'", "\\'") + "'";
     }
 }

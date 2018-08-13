@@ -39,7 +39,11 @@ public class MXLReader implements EntityResolver {
 
     private Notation notation;
     private Part[] parts;
-    private int lastStaff;
+    private int lastStaff = 1;
+
+    private int lastRepeatStart = 0;
+    private boolean skipOn = false;
+    private Set<Integer> repeatSkip;
 
     private Part newPart(boolean misc) {
         Part part = new Part();
@@ -104,6 +108,8 @@ public class MXLReader implements EntityResolver {
                 track.getHigh(), track.getBass(), track.getMisc()
         };
 
+        this.repeatSkip = new LinkedHashSet<Integer>();
+
         for (String pid : list) {
             this.part((Element) root.selectSingleNode("part[@id='" + pid + "']"));
         }
@@ -129,6 +135,10 @@ public class MXLReader implements EntityResolver {
             ctg.addTuple(new Tuple<ClefType>(0, misc ? ClefType.L4F : ClefType.L2G));
         }
 
+        this.fillEmptyMeasures(part, count);
+    }
+
+    private void fillEmptyMeasures(Part part, int count) {
         List<Measure> list = part.getMeasures();
         if (list == null) {
             list = new ArrayList<Measure>();
@@ -182,9 +192,10 @@ public class MXLReader implements EntityResolver {
     private void measure(Fee measures) {
         for (Element me : measures) {
             String number = me.attributeValue("number");
-            log.debug("Part number is {}", number);
+            int count = measures.count(), index = count - 1;
+            log.debug("Measure number is {}, index is {}", number, index);
 
-            this.direction(me.element("direction"));
+            this.direction(new Fee(me.elementIterator("direction")));
 
             int staff = this.attributes(me.element("attributes"));
             if (staff == 0) {
@@ -195,8 +206,10 @@ public class MXLReader implements EntityResolver {
 
             Measure[] column = new Measure[staff];
             for (int i = 0; i < staff; i++) {
-                column[i] = new Measure();
-                this.parts[i].getMeasures().add(column[i]);
+                Measure m = new Measure();
+                m.setNotes(new ArrayList<Note>());
+                this.parts[i].getMeasures().add(m);
+                column[i] = m;
             }
 
             for (Element ne : new Fee(me.elementIterator("note"))) {
@@ -206,10 +219,6 @@ public class MXLReader implements EntityResolver {
                 Note note = tuple.getValue();
                 Measure m = column[stf - 1];
                 List<Note> list = m.getNotes();
-                if (list == null) {
-                    list = new ArrayList<Note>();
-                    m.setNotes(list);
-                }
 
                 Note last = null;
                 if (list.isEmpty()) {
@@ -225,10 +234,9 @@ public class MXLReader implements EntityResolver {
                     if (last == null) {
                         log.warn("First note is chrod ?");
                     } else {
-                        List<Sign> ss = note.getPitch().getSigns();
-                        List<Sign> lss = last.getPitch().getSigns();
-                        lss.addAll(ss);
-                        last.setClassicPitchSignCount(this.size(lss));
+                        List<Sign> ls = last.getPitch().getSigns();
+                        ls.addAll(note.getPitch().getSigns());
+                        last.setClassicPitchSignCount(this.size(ls));
                         continue;
                     }
                 }
@@ -239,41 +247,104 @@ public class MXLReader implements EntityResolver {
             for (Measure m : column) {
                 m.setNoteCount(this.size(m.getNotes()));
             }
+
+            String ret = this.barline(new Fee(me.elementIterator("barline")));
+            if (ret.contains(">")) {
+                this.lastRepeatStart = index;
+            }
+            if (ret.contains("+")) {
+                this.skipOn = true;
+            }
+            if (this.skipOn) {
+                this.repeatSkip.add(index);
+            }
+            if (ret.contains("-")) {
+                this.skipOn = false;
+            }
+
+            if (ret.contains("<")) {
+                int end = index, start = this.lastRepeatStart;
+                log.debug("Repeat measure from {} to {}", start, end);
+
+                for (Part part : this.parts) {
+                    this.fillEmptyMeasures(part, count);
+
+                    List<Measure> ms = part.getMeasures();
+                    for (int i = start; i <= end; i++) {
+                        if (this.repeatSkip.contains(i)) {
+                            //log.debug(" but skip {}", i);
+                            continue;
+                        }
+                        ms.add(ms.get(i));
+                    }
+                }
+            }
         }
     }
 
-    private void direction(Element direction) {
-        if (direction == null) return;
-        int tempo = 0;
-        Element sound = direction.element("sound");
-        if (sound != null) {
-            String v = sound.attributeValue("tempo");
-            if (v != null) {
-                tempo = Helper.intVal(v);
-            }
-        }
-        if (tempo == 0) {
-            for (Element element : new Fee(direction.elementIterator("direction-type"))) {
-                Element metronome = element.element("metronome");
-                if (metronome == null) {
-                    continue;
-                }
-                String pm = metronome.elementTextTrim("per-minute");
-                if (pm != null) {
-                    tempo = Helper.intVal(pm);
-                    break;
-                }
-            }
-        }
+    private String barline(Fee barlines) {
+        StringBuilder ret = new StringBuilder();
+        for (Element e : barlines) {
+            Element repeat = e.element("repeat");
+            if (repeat != null) {
+                //String location = e.attributeValue("location");// left right middle
+                String direction = repeat.attributeValue("direction");
 
-        if (tempo > 0) {
-            Info info = this.notation.getInfo();
-            Group<Integer> group = info.getBeatsPerMinute();
-            if (group == null) {
-                group = new Group<Integer>();
-                info.setBeatsPerMinute(group);
+                if ("forward".equals(direction)) {// |:
+                    ret.append(">");
+                } else if ("backward".equals(direction)) {// :|
+                    ret.append("<");
+                }
             }
-            group.addTuple(new Tuple<Integer>(this.size(this.parts[0].getMeasures()), tempo));
+
+            Element ending = e.element("ending");
+            if (ending != null) {
+                //String number = ending.attributeValue("number");
+                String type = ending.attributeValue("type");//start stop discontinue
+                if ("start".equals(type)) {
+                    ret.append("+");
+                } else if ("stop".equals(type)) {
+                    ret.append("-");
+                }
+            }
+        }
+        return ret.toString();
+    }
+
+    private void direction(Fee directions) {
+        for (Element direction : directions) {
+            int tempo = 0;
+            Element sound = direction.element("sound");
+            if (sound != null) {
+                String v = sound.attributeValue("tempo");
+                if (v != null) {
+                    tempo = Helper.intVal(v);
+                }
+            }
+            if (tempo == 0) {
+                for (Element element : new Fee(direction.elementIterator("direction-type"))) {
+                    Element metronome = element.element("metronome");
+                    if (metronome == null) {
+                        continue;
+                    }
+                    String pm = metronome.elementTextTrim("per-minute");
+                    if (pm != null) {
+                        tempo = Helper.intVal(pm);
+                        break;
+                    }
+                }
+            }
+
+            if (tempo > 0) {
+                Info info = this.notation.getInfo();
+                Group<Integer> group = info.getBeatsPerMinute();
+                if (group == null) {
+                    group = new Group<Integer>();
+                    info.setBeatsPerMinute(group);
+                }
+                group.addTuple(new Tuple<Integer>(this.size(this.parts[0].getMeasures()), tempo));
+                break;
+            }
         }
     }
 
@@ -389,10 +460,28 @@ public class MXLReader implements EntityResolver {
             } else {
                 log.warn("Tie type {} is not mapping", tt);
             }
+        } else {
+            for (Element notations : new Fee(ne.elementIterator("notations"))) {
+                for (Element element : new Fee(notations.elementIterator())) {
+                    String name = element.getName();
+                    if ("tied".equals(name) || "slur".equals(name)) {//延音和连音在GJM为一种
+                        String et = element.attributeValue("type");
+                        if ("start".equals(et)) {
+                            note.setTieType(TieType.Start);
+                        } else if ("stop".equals(et)) {
+                            note.setTieType(TieType.End);
+                        }
+                    }
+                }
+            }
         }
 
-        if (ne.element("rest") != null) {//休止符    似乎gjm里没有全休止符....
+        if (ne.element("rest") != null) {//休止符
             note.setRest(true);
+
+            if (type == null) {//没有类型,MusicXML默认为全休止符,但是这里不能这么做.否则在mb中会等待很长时间
+                //note.setDurationType(DurationType.Whole);
+            }
 
             //FIXME 这里在MusicXml中,只要休止,就不要音符,但是gjm中需要...随便给一个普通C
             Sign sign = new Sign();
