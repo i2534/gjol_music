@@ -6,6 +6,7 @@ import com.wangyuan.gjol.music.util.Helper;
 import org.dom4j.Document;
 import org.dom4j.DocumentException;
 import org.dom4j.Element;
+import org.dom4j.Node;
 import org.dom4j.io.SAXReader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,16 +14,18 @@ import org.xml.sax.EntityResolver;
 import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
 
-import java.io.File;
-import java.io.IOException;
-import java.io.StringReader;
+import java.io.*;
 import java.util.*;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipException;
+import java.util.zip.ZipFile;
 
-public class MXLReader implements EntityResolver {
+public class MXLReader implements EntityResolver, Closeable {
 
     private static Logger log = LoggerFactory.getLogger(MXLReader.class);
 
     private static final String ROOT_NAME = "score-partwise";
+
 
     private static class Fee extends ForEach<Element> {
         Fee(Iterator<Element> it) {
@@ -36,6 +39,8 @@ public class MXLReader implements EntityResolver {
     static {
         NOTES.addAll(Arrays.asList("C", "D", "E", "F", "G", "A", "B"));
     }
+
+    private ZipFile zip;
 
     private Notation notation;
     private Part[] parts;
@@ -69,58 +74,85 @@ public class MXLReader implements EntityResolver {
         return c == null ? 0 : c.size();
     }
 
-    public Notation read(File file) throws DocumentException {
-        SAXReader reader = new SAXReader();
-        reader.setEntityResolver(this);
-        Document document = reader.read(file);
-        Element root = document.getRootElement();
-        String name = root.getName();
-
-        if (!ROOT_NAME.equals(name)) {
-            throw new DocumentException("Document root must be " + ROOT_NAME);
+    private InputStream musicXML(File file) throws IOException, DocumentException {
+        try {
+            this.zip = new ZipFile(file);
+            ZipEntry root = this.zip.getEntry("META-INF/container.xml");
+            InputStream in = this.zip.getInputStream(root);
+            SAXReader sax = new SAXReader();
+            Document doc = sax.read(in);
+            for (Node node : doc.getRootElement().selectNodes("/container/rootfiles/rootfile")) {
+                Element e = (Element) node;
+                String path = e.attributeValue("full-path");
+                String type = e.attributeValue("media-type");
+                if (type == null || "application/vnd.recordare.musicxml+xml".equals(type)) {
+                    return this.zip.getInputStream(this.zip.getEntry(path));
+                }
+            }
+        } catch (ZipException e) {
+            return new FileInputStream(file);
         }
+        return null;
+    }
 
-        String version = root.attributeValue("version");
-        log.debug("MusicXML version is {}", version);
+    public Notation read(File file) throws DocumentException, IOException {
+        InputStream in = this.musicXML(file);
+        try {
+            SAXReader reader = new SAXReader();
+            reader.setEntityResolver(this);
+            Document document = reader.read(in);
+            Element root = document.getRootElement();
+            String name = root.getName();
 
-        this.notation = new Notation();
-        Info info = new Info();
-        info.setName("未知名称");
-        info.setAuthor("未知作者");
-        info.setCreator("未知录入");
-        info.setTranslater(this.getClass().getSimpleName());
-        this.notation.setInfo(info);
+            if (!ROOT_NAME.equals(name)) {
+                throw new DocumentException("Document root must be " + ROOT_NAME);
+            }
 
-        this.work(root.element("work"));
-        this.identification(root.element("identification"));
+            String version = root.attributeValue("version");
+            log.debug("MusicXML version is {}", version);
 
-        List<String> list = this.partList(root.element("part-list"));
-        if (list == null || list.isEmpty()) {
-            throw new DocumentException("Not found any part-list ???");
+            this.notation = new Notation();
+            Info info = new Info();
+            info.setName("未知名称");
+            info.setAuthor("未知作者");
+            info.setCreator("凤仪(百草谷)");
+            info.setTranslater(this.getClass().getSimpleName());
+            info.setBeatsPerMinute(new Group<Integer>());
+            this.notation.setInfo(info);
+
+            this.work(root.element("work"));
+            this.identification(root.element("identification"));
+
+            List<String> list = this.partList(root.element("part-list"));
+            if (list == null || list.isEmpty()) {
+                throw new DocumentException("Not found any part-list ???");
+            }
+            Track track = new Track();
+            this.notation.setTrack(track);
+            track.setHigh(this.newPart(false));
+            track.setBass(this.newPart(false));
+            track.setMisc(this.newPart(true));
+
+            this.parts = new Part[]{
+                    track.getHigh(), track.getBass(), track.getMisc()
+            };
+
+            this.repeatSkip = new LinkedHashSet<Integer>();
+
+            for (String pid : list) {
+                this.part((Element) root.selectSingleNode("part[@id='" + pid + "']"));
+            }
+
+            int size = this.size(this.parts[0].getMeasures());
+            this.replenish(this.parts[1], size, false);
+            this.replenish(this.parts[2], size, true);
+
+            info.setMeasureAlignedCount(size);
+
+            return this.notation;
+        } finally {
+            if (in != null) in.close();
         }
-        Track track = new Track();
-        this.notation.setTrack(track);
-        track.setHigh(this.newPart(false));
-        track.setBass(this.newPart(false));
-        track.setMisc(this.newPart(true));
-
-        this.parts = new Part[]{
-                track.getHigh(), track.getBass(), track.getMisc()
-        };
-
-        this.repeatSkip = new LinkedHashSet<Integer>();
-
-        for (String pid : list) {
-            this.part((Element) root.selectSingleNode("part[@id='" + pid + "']"));
-        }
-
-        int size = this.size(this.parts[0].getMeasures());
-        this.replenish(this.parts[1], size, false);
-        this.replenish(this.parts[2], size, true);
-
-        info.setMeasureAlignedCount(size);
-
-        return this.notation;
     }
 
     private void replenish(Part part, int count, boolean misc) {
@@ -165,11 +197,11 @@ public class MXLReader implements EntityResolver {
             String val = creator.getTextTrim();
             if ("composer".equals(type)) {//作曲
                 info.setAuthor(val);
-            } else if ("lyricist".equals(type)) {//作词
+            }/* else if ("lyricist".equals(type)) {//作词
                 info.setCreator(val);
             } else if ("arranger".equals(type)) {//编曲
                 info.setCreator(val);
-            }
+            }*/
         }
     }
 
@@ -195,7 +227,12 @@ public class MXLReader implements EntityResolver {
             int count = measures.count(), index = count - 1;
             log.debug("Measure number is {}, index is {}", number, index);
 
-            this.direction(new Fee(me.elementIterator("direction")));
+            int bpm = this.direction(new Fee(me.elementIterator("direction")));
+            if (index == 0 && bpm == 0) {
+                Info info = this.notation.getInfo();
+                Group<Integer> group = info.getBeatsPerMinute();
+                group.addTuple(new Tuple<Integer>(0, 120));
+            }
 
             int staff = this.attributes(me.element("attributes"));
             if (staff == 0) {
@@ -261,7 +298,6 @@ public class MXLReader implements EntityResolver {
             if (ret.contains("-")) {
                 this.skipOn = false;
             }
-
             if (ret.contains("<")) {
                 int end = index, start = this.lastRepeatStart;
                 log.debug("Repeat measure from {} to {}", start, end);
@@ -311,9 +347,9 @@ public class MXLReader implements EntityResolver {
         return ret.toString();
     }
 
-    private void direction(Fee directions) {
+    private int direction(Fee directions) {
+        int tempo = 0;
         for (Element direction : directions) {
-            int tempo = 0;
             Element sound = direction.element("sound");
             if (sound != null) {
                 String v = sound.attributeValue("tempo");
@@ -338,14 +374,11 @@ public class MXLReader implements EntityResolver {
             if (tempo > 0) {
                 Info info = this.notation.getInfo();
                 Group<Integer> group = info.getBeatsPerMinute();
-                if (group == null) {
-                    group = new Group<Integer>();
-                    info.setBeatsPerMinute(group);
-                }
                 group.addTuple(new Tuple<Integer>(this.size(this.parts[0].getMeasures()), tempo));
                 break;
             }
         }
+        return tempo;
     }
 
     private int attributes(Element attributes) {
@@ -360,14 +393,31 @@ public class MXLReader implements EntityResolver {
             log.warn("GJM support three parts only!");
         }
 
+        Fee clef = new Fee(attributes.elementIterator("clef"));
+        for (Element element : clef) {
+            Element sign = element.element("sign");
+            String val = sign.getTextTrim();
+            ClefType type = ClefType.of(val);
+            if (type == null) {
+                log.warn("Clef type {} is not mapping", val);
+            } else {
+                Part part = this.parts[clef.count() - 1];
+                Group<ClefType> group = part.getClefType();
+                if (group == null) {
+                    group = new Group<ClefType>();
+                    part.setClefType(group);
+                }
+                group.addTuple(new Tuple<ClefType>(this.size(part.getMeasures()), type));
+            }
+        }
+
         Element key = attributes.element("key");
         if (key != null) {
             String fifths = key.elementTextTrim("fifths");
             if (fifths != null) {
                 KeySignature ks = KeySignature.of(Helper.intVal(fifths));
                 if (ks != null) {
-                    for (int i = 0; i < staff; i++) {
-                        Part part = this.parts[i];
+                    for (Part part : this.parts) {
                         Group<KeySignature> group = part.getKeySignature();
                         if (group == null) {
                             group = new Group<KeySignature>();
@@ -395,24 +445,6 @@ public class MXLReader implements EntityResolver {
                 } else {
                     log.warn("Beat type {} is not mapping", beatType);
                 }
-            }
-        }
-
-        Fee clef = new Fee(attributes.elementIterator("clef"));
-        for (Element element : clef) {
-            String val = element.elementTextTrim("sign");
-            ClefType type = ClefType.of(val);
-            if (type == null) {
-                log.warn("Clef type {} is not mapping", val);
-            } else {
-                int i = clef.count() - 1;
-                Part part = this.parts[i];
-                Group<ClefType> group = part.getClefType();
-                if (group == null) {
-                    group = new Group<ClefType>();
-                    part.setClefType(group);
-                }
-                group.addTuple(new Tuple<ClefType>(this.size(part.getMeasures()), type));
             }
         }
 
@@ -460,18 +492,27 @@ public class MXLReader implements EntityResolver {
             } else {
                 log.warn("Tie type {} is not mapping", tt);
             }
-        } else {
-            for (Element notations : new Fee(ne.elementIterator("notations"))) {
-                for (Element element : new Fee(notations.elementIterator())) {
-                    String name = element.getName();
-                    if ("tied".equals(name) || "slur".equals(name)) {//延音和连音在GJM为一种
-                        String et = element.attributeValue("type");
-                        if ("start".equals(et)) {
-                            note.setTieType(TieType.Start);
-                        } else if ("stop".equals(et)) {
-                            note.setTieType(TieType.End);
-                        }
+        }
+        for (Element notations : new Fee(ne.elementIterator("notations"))) {
+            for (Element element : new Fee(notations.elementIterator())) {
+                String name = element.getName();
+                if ("tied".equals(name) || "slur".equals(name)) {//延音和连音在GJM为一种
+                    String et = element.attributeValue("type");
+                    if ("start".equals(et)) {
+                        note.setTieType(TieType.Start);
+                    } else if ("stop".equals(et)) {
+                        note.setTieType(TieType.End);
                     }
+                } else if ("tuplet".equals(name)) {//TODO 需要判断是几连音
+                    String tt = element.attributeValue("type");
+                    if ("start".equals(tt)) {
+                        note.setTriplet(true);
+                    } else if ("stop".equals(tt)) {
+                        //
+                    }
+                } else if ("arpeggiate".equals(name)) {
+                    //TODO 琶音
+                    log.warn("Unsupported arpeggiate");
                 }
             }
         }
@@ -542,5 +583,9 @@ public class MXLReader implements EntityResolver {
         } else {
             return null;
         }
+    }
+
+    public void close() throws IOException {
+        if (this.zip != null) zip.close();
     }
 }

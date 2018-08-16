@@ -1,6 +1,7 @@
 package com.wangyuan.gjol.music.model.v1;
 
 import com.wangyuan.gjol.music.model.GJM;
+import com.wangyuan.gjol.music.model.v1.enums.ArpeggioMode;
 import com.wangyuan.gjol.music.model.v1.enums.DurationType;
 import com.wangyuan.gjol.music.model.v1.enums.TieType;
 import com.wangyuan.gjol.music.util.Rule;
@@ -29,6 +30,17 @@ public class Note implements GJM {
      */
     @Rule("DurationType")
     private DurationType durationType = DurationType.Quarter;
+    /**
+     * 琶音
+     */
+    @Rule("ArpeggioMode")
+    private ArpeggioMode arpeggioMode;
+    /**
+     * 是否三连音开始
+     */
+    @Rule("Triplet")
+    private Boolean triplet;
+
     @Rule("StampIndex")
     private int stampIndex;
     @Rule("PlayingDurationTimeMs")
@@ -107,6 +119,22 @@ public class Note implements GJM {
 
     public void setPitch(Pitch pitch) {
         this.pitch = pitch;
+    }
+
+    public ArpeggioMode getArpeggioMode() {
+        return arpeggioMode;
+    }
+
+    public void setArpeggioMode(ArpeggioMode arpeggioMode) {
+        this.arpeggioMode = arpeggioMode;
+    }
+
+    public Boolean getTriplet() {
+        return triplet;
+    }
+
+    public void setTriplet(Boolean triplet) {
+        this.triplet = triplet;
     }
 
     public boolean isChrod() {
