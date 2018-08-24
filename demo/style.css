@@ -1,4 +1,49 @@
+textarea {
+    width: 90%;
+    height: 500px;
+    border: 1px solid green;
+}
 
-* {
- padding : 0;
+.pure-g {
+    margin: 10px;
+}
+
+.pure-button {
+    width: 100px;
+    background: rgb(66, 184, 221);
+}
+
+.notes {
+    margin: 10px 0;
+    padding: 12px;
+}
+
+.note {
+    width: 95%;
+    color: #00529B;
+    background-color: #BDE5F8;
+}
+
+.note span {
+    margin: 0 10px;
+}
+
+.note ul {
+    margin: 0;
+    font-size: 14px;
+}
+
+.note .date {
+    color: #4F8A10;
+    background-color: #DFF2BF;
+}
+
+.note .fix {
+    color: #D8000C;
+    background-color: #FFD2D2;
+}
+
+.note .todo {
+    color: #9F6000;
+    background-color: #FEEFB3;
 }

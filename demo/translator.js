@@ -245,7 +245,7 @@ function Translator(musicXML) {
         };
         this.unite = function (lv) {
             var ls = [];
-            ts.forEach(function (t) {
+            ts.each(function (t) {
                 ls.push(tab(lv) + t.unite(lv + 1));
             });
             return ls.join('\n');
@@ -270,7 +270,7 @@ function Translator(musicXML) {
         };
         this.unite = function (lv) {
             var ls = [];
-            vs.forEach(function (v, i) {
+            vs.each(function (v, i) {
                 ls.push(tab(lv) + '[' + i + '] = ' + object(v, lv) + ',');
             });
             return ls.join('\n');
@@ -300,7 +300,7 @@ function Translator(musicXML) {
 
         (function identification(xe) {
             if (!xe) return;
-            xe.children('creator').forEach(function (c) {
+            xe.children('creator').each(function (c) {
                 var type = c.attr('type'), v = c.text();
                 if ('composer' === type) {
                     info.NotationAuthor = v;
@@ -325,24 +325,24 @@ function Translator(musicXML) {
 
         parts = [ new Part(), new Part(), new Part() ];
         var track = {};
-        parts.forEach(function (p, i) {
+        parts.each(function (p, i) {
             track[ '[' + i + ']' ] = p;
         });
 
         (function partList(pl) {
             var ids = [];
-            pl && pl.children('score-part').forEach(function (sp) {
+            pl && pl.children('score-part').each(function (sp) {
                 var id = sp.attr('id'), name = childText(sp, 'part-name');
                 console.log('Part id is ' + id + ', name is ' + name);
                 ids.push(id);
             });
             return ids;
-        })(root.find('part-list')).forEach(function (id) {
+        })(root.find('part-list')).each(function (id) {
             var part = root.select('part[@id=\'' + id + '\']')[ 0 ];
-            part.children('measure').forEach(Measure);
+            part.children('measure').each(Measure);
         });
 
-        parts.forEach(function (part) {
+        parts.each(function (part) {
             for (var i = part.measures.size(); i < measureCount; i++) {
                 part.measures.add({ DurationStampMax : 0, NotePackCount : 0 });
             }
@@ -359,13 +359,13 @@ function Translator(musicXML) {
 
         var bpm = (function direction(ds) {
             var tempo = 0;
-            ds.forEach(function (d) {
+            ds.each(function (d) {
                 var sound = d.child('sound');
                 if (sound) {
                     tempo = parseInt(sound.attr('tempo'));
                 }
                 if (!tempo) {
-                    d.children('direction-type').forEach(function (e) {
+                    d.children('direction-type').each(function (e) {
                         var metronome = childText(e.child('metronome'), 'per-minute');
                         if (metronome) {
                             tempo = parseInt(metronome);
@@ -399,7 +399,7 @@ function Translator(musicXML) {
                 staff = 3;
             }
 
-            as.children('clef').forEach(function (clef, i) {
+            as.children('clef').each(function (clef, i) {
                 if (i >= parts.length) {
                     return false;
                 }
@@ -417,8 +417,8 @@ function Translator(musicXML) {
             var fifths = childText(as.child('key'), 'fifths');
             if (fifths) {
                 var ks = parseInt(fifths);//get(KeySignature, fifths);
-                if (ks) {
-                    parts.forEach(function (p) {
+                if (!isNaN(ks)) {
+                    parts.each(function (p) {
                         p.MeasureKeySignatureMap.add(new Tuple(measureCount, ks));
                     });
                 } else {
@@ -458,7 +458,7 @@ function Translator(musicXML) {
         }
 
         (function note(notes) {
-            notes.forEach(function (n, i) {
+            notes.each(function (n, i) {
                 var na = Note(n, i);
 
                 var staff = na[ 0 ];
@@ -490,7 +490,7 @@ function Translator(musicXML) {
 
         var result = (function barline(bes) {
             var ret = [];
-            bes.forEach(function (e) {
+            bes.each(function (e) {
                 var repeat = e.child('repeat');
                 if (repeat) {
                     var direction = repeat.attr('direction');
@@ -529,7 +529,7 @@ function Translator(musicXML) {
                 var end = index, start = lastRepeatStart;
                 console.log('Repeat measure from ' + start + ' to ' + end);
 
-                parts.forEach(function (part) {
+                parts.each(function (part) {
                     var pms = part.measures;
                     for (var j = pms.size(); j <= index; j++) {
                         pms.add({ DurationStampMax : 0, NotePackCount : 0 });
@@ -544,7 +544,7 @@ function Translator(musicXML) {
             }
         })(result);
 
-        cache.forEach(function (m) {
+        cache.each(function (m) {
             m.NotePackCount = m.notes.size();
         });
 
@@ -582,7 +582,7 @@ function Translator(musicXML) {
 
             var accidental = childText(ne, 'accidental');
             if (accidental) {
-                AlterantType.forEach(function (at) {
+                AlterantType.each(function (at) {
                     if (at.toLowerCase() === accidental.toLowerCase()) {
                         sign.AlterantType = at;
                         return false;
@@ -679,8 +679,8 @@ function Translator(musicXML) {
 }
 
 // From https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/forEach
-if (!Array.prototype.forEach) {
-    Array.prototype.forEach = function (callback/*, thisArg*/) {
+if (!Array.prototype.each) {
+    Array.prototype.each = function (callback/*, thisArg*/) {
         var T, k;
         if (this === null) {
             throw new TypeError('this is null or not defined');
