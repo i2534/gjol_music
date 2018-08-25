@@ -22,6 +22,7 @@ textarea {
     width: 95%;
     color: #00529B;
     background-color: #BDE5F8;
+    margin-bottom: 10px;
 }
 
 .note span {
@@ -34,6 +35,12 @@ textarea {
 }
 
 .note .date {
+    color: #4F8A10;
+    border-bottom: 1px solid gray;
+    font-weight: bold;
+}
+
+.note .update {
     color: #4F8A10;
     background-color: #DFF2BF;
 }

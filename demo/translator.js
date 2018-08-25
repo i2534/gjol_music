@@ -31,7 +31,11 @@ function XE(ele) {
             var array = [];
             for (var i = 0; i < cs.length; i++) {
                 var e = cs[ i ];
-                if (!name || name + '' === e.nodeName) {
+                if (name) {
+                    if (name + '' === e.nodeName) {
+                        array.push(new XE(e));
+                    }
+                } else {
                     array.push(new XE(e));
                 }
             }
@@ -185,6 +189,14 @@ function Translator(musicXML) {
             return o[ n ];
         }
     };
+    var set = function (o, n, v) {
+        if (o && n) {
+            if (v === undefined || v === null || isNaN(v)) {
+                return;
+            }
+            o[ n ] = v;
+        }
+    };
 
     var key = function (o, val) {
         for (var n in o) {
@@ -208,7 +220,7 @@ function Translator(musicXML) {
         'maxima' : -8, 'long' : -4, 'breve' : -2, 'whole' : 1, 'half' : 2, 'quarter' : 4, 'eighth' : 8,
         '16th' : 16, '32nd' : 32, '64th' : 64, '128th' : 128, '256th' : 256, '512th' : 512, '1024th' : 1024
     };
-    var AlterantType = ['NoControl', 'Natural', 'Sharp', 'Flat'];
+    var AlterantType = [ 'NoControl', 'Natural', 'Sharp', 'Flat' ];
 
     var VALUES = [
         [ 0, 0, 0, 0, 0, 0, 0 ],
@@ -399,6 +411,11 @@ function Translator(musicXML) {
                 staff = 3;
             }
 
+            var dis = parseInt(childText(as, 'divisions'));
+            if (dis) {
+                divisions = dis;
+            }
+
             as.children('clef').each(function (clef, i) {
                 if (i >= parts.length) {
                     return false;
@@ -414,17 +431,13 @@ function Translator(musicXML) {
                 }
             });
 
-            var fifths = childText(as.child('key'), 'fifths');
-            if (fifths) {
-                var ks = parseInt(fifths);//get(KeySignature, fifths);
-                if (!isNaN(ks)) {
-                    parts.each(function (p) {
-                        p.MeasureKeySignatureMap.add(new Tuple(measureCount, ks));
-                    });
-                } else {
-                    console.log('Key ' + fifths + ' is not mapping');
-                }
+            var fifths = parseInt(childText(as.child('key'), 'fifths'));//get(KeySignature, fifths);
+            if (!isNaN(fifths)) {
+                parts.each(function (p) {
+                    p.MeasureKeySignatureMap.add(new Tuple(measureCount, fifths));
+                });
             }
+
             var time = as.child('time');
             if (time) {
                 var beats = childText(time, 'beats');
@@ -555,9 +568,9 @@ function Translator(musicXML) {
         var note = {
             IsRest : false,
             IsDotted : false,
-            TieType : null,
+            TieType : null, /*Start End*/
             DurationType : 'Quarter',
-            ArpeggioMode : null,
+            ArpeggioMode : null, /*Downward Upward*/
             Triplet : false,
             StampIndex : 0,
             PlayingDurationTimeMs : 0,
@@ -599,14 +612,68 @@ function Translator(musicXML) {
             }
         }
         note.isChrod = !!ne.child('chord');
-        note.IsDotted = !!ne.child('dot');
+        var dotCount = ne.children('dot').length;
+        note.IsDotted = dotCount > 0;
 
         var index = parseInt(childText(ne, 'staff')) || 1;
 
-        //TODO tie notations
+        (function tie(te) {
+            if (!te) return;
+            var tt = te.attr('type');
+            if ('start' === tt) {
+                note.TieType = 'Start';
+            } else if ('stop' === tt) {
+                note.TieType = 'End';
+            }
+        })(ne.child('tie'));
+
+        (function notations(nos) {
+            nos.each(function (noe) {
+                noe.children().each(function (e) {
+                    var name = e.name();
+                    if ('tied' === name || 'slur' === name) {//延音和连音在GJM为一种
+                        var et = e.attr('type');
+                        if ('start' === et) {
+                            note.TieType = 'Start';
+                        } else if ('stop' === et) {
+                            note.TieType = 'End';
+                        }
+                    } else if ('tuplet' === name) {// 需要判断是几连音
+                        var tt = e.attr('type');
+                        if ('start' === tt) {
+                            note.Triplet = true;
+                        } else if ('stop' === tt) {
+                            //
+                        }
+                    } else if ('arpeggiate' === name) {// 琶音
+                        var stem = childText(e, 'stem');
+                        if (stem === 'up') {
+                            note.ArpeggioMode = 'Upward';
+                        } else {
+                            note.ArpeggioMode = 'Downward';
+                        }
+                    }
+                });
+            });
+        })(ne.children('notations'));
 
         if (ne.child('rest')) {
             note.IsRest = true;
+
+            var duration = parseInt(childText(ne, 'duration'));
+            if (duration) {
+                var v = divisions * 4;
+                if (dotCount === 1) {
+                    v *= 3 / 2;
+                } else if (dotCount === 2) {
+                    v *= 7 / 4;
+                }
+                v /= duration;
+                var dt = get(DurationType, v + '');
+                if (dt) {
+                    note.DurationType = dt;
+                }
+            }
 
             var sign = new Sign();
             sign.NumberedSign = 1;
@@ -640,6 +707,9 @@ function Translator(musicXML) {
     var measureCount = 0;
     var parts = [];
     var lastStaff = 1;
+
+    var divisions = 1;
+
     var lastRepeatStart = 0;
     var skipOn = false;
     var repeatSkip = [];
