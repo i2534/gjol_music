@@ -4,98 +4,165 @@
     <title>在线转换</title>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="stylesheet" href="https://unpkg.com/purecss@1.0.0/build/base-min.css">
-    <link rel="stylesheet" href="https://unpkg.com/purecss@1.0.0/build/pure-min.css" integrity="sha384-nn4HPE8lTHyVtfCBi5yW9d20FjT8BJwUXyWZT9InLYax14RDjBj46LmSztkmNP9w" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdn.bootcss.com/pure/1.0.0/base-min.css">
+    <link rel="stylesheet" href="https://cdn.bootcss.com/pure/1.0.0/pure-min.css" crossorigin="anonymous">
 
     <!--[if lte IE 8]>
-    <link rel="stylesheet" href="https://unpkg.com/purecss@1.0.0/build/grids-responsive-old-ie-min.css">
+    <link rel="stylesheet" href="https://cdn.bootcss.com/pure/1.0.0/grids-responsive-old-ie-min.css">
     <![endif]-->
     <!--[if gt IE 8]><!-->
-    <link rel="stylesheet" href="https://unpkg.com/purecss@1.0.0/build/grids-responsive-min.css">
+    <link rel="stylesheet" href="https://cdn.bootcss.com/pure/1.0.0/grids-responsive-min.css">
     <!--<![endif]-->
 
     <link rel="stylesheet" href="./demo/style.css">
 
+    <script type="text/javascript" src="https://cdn.bootcss.com/jquery/3.3.1/jquery.min.js"></script>
     <script type="text/javascript" src="./demo/translator.js"></script>
 
     <script type="text/javascript">
-        //https://purecss.io/start/
-        var name;
+        $(function () {
+            var name;
+            $('#_upload').on('change', function (e) {
+                name = '';
+                if (window.FileReader) {
+                    var reader = new FileReader();
+                    reader.onload = function () {
+                        var data = reader.result;
+                        $('#source').val(data || '');
+                    };
+                    reader.onerror = function () {
+                        alert(reader.error.message);
+                    };
 
-        function disableSubmit() {
-            if (event.preventDefault)
-                event.preventDefault();
-            else
-                event.returnValue = false;
-        }
+                    var input = e.target;
+                    var file = input.files[ 0 ];
+                    name = file.name;
+                    reader.readAsText(file);
+                } else {
+                    alert('你的浏览器太落后了,请自行将MusicXML的内容粘贴到源');
+                }
+            });
+            $('#_translate').on('click', function () {
+                var data = $('#source').val();
+                var target = $('#target').val('');
 
-        function openMusicXML(e) {
-            if (window.FileReader) {
-                var reader = new FileReader();
-                reader.onload = function () {
-                    var data = reader.result;
-                    if (data)
-                        document.getElementById('source').value = data;
-                };
-                reader.onerror = function () {
-                    alert(reader.error.message);
-                };
+                var cfg = {};
+                $.each($('#_cfg').serializeArray(), function (_, o) {
+                    cfg[ o.name ] = o.value;
+                });
 
-                var input = e.target;
-                var file = input.files[ 0 ];
-                name = file.name;
-                reader.readAsText(file);
-            } else {
-                alert('你的浏览器太落后了,请自行将MusicXML的内容粘贴到源');
-            }
-        }
-
-        function doTranslate() {
-            var data = document.getElementById('source').value;
-            var target = document.getElementById('target');
-
-            target.value = '';
-
-            var translator = new Translator(data);
-            var result = translator.translate();
-            target.value = result || '';
-        }
-
-        function doSaveAs() {
-            var anchor = document.getElementById('anchor');
-            var val = document.getElementById('target').value;
-            var blob = new Blob([ val ], { type : 'text/plain' });
-            anchor.download = (name || 'html') + '.gjm';
-            anchor.href = (window.webkitURL || window.URL).createObjectURL(blob);
-            anchor.dataset.downloadurl = [ 'text/plain', anchor.download, anchor.href ].join(':');
-        }
+                var translator = new Translator(data, cfg);
+                var result = translator.translate();
+                target.val(result || '');
+            });
+            $('#_anchor').on('click', function () {
+                var anchor = this;
+                var val = $('#target').val();
+                var blob = new Blob([ val ], { type : 'text/plain' });
+                anchor.download = (name || 'html') + '.gjm';
+                anchor.href = (window.webkitURL || window.URL).createObjectURL(blob);
+                anchor.dataset.downloadurl = [ 'text/plain', anchor.download, anchor.href ].join(':');
+            });
+            $('#speed').on('change, mouseup, keyup, blur, click', function () {
+                var num = parseInt($(this).val());
+                if (num) {
+                    num = Math.max(50, Math.min(300, num));
+                } else {
+                    num = 100;
+                }
+                $(this).val(num);
+            });
+        });
     </script>
 </head>
-
 <body>
 
 <div class="pure-g">
     <div class="pure-u-1">
         <h2>MusicXML -> GJM</h2>
-        <p>不要使用 <b style="color:red;">IE</b> !!!</p>
+        <p>不要使用 <b style="color:red;">IE</b> !!!, 详细情况见 <a href="http://bbs.ngacn.cc/read.php?tid=14725485" target="_blank">我的帖子</a></p>
     </div>
-    <div class="pure-u-1 pure-u-md-1-2">
-        <form class="pure-form pure-form-stacked" action="#" onsubmit="disableSubmit();">
-            <label for="file-upload" class="pure-button">打开...</label>
-            <input id="file-upload" type="file" accept="application/vnd.recordare.musicxml+xml" onchange="openMusicXML(event);" hidden/>
+    <div class="pure-u-1 pure-u-md-1-3">
+        <form class="pure-form pure-form-stacked" action="#">
+            <label for="_upload" class="pure-button">打开...</label>
+            <input id="_upload" type="file" accept="application/vnd.recordare.musicxml+xml" hidden/>
             <label for="source">MusicXML:</label>
-            <textarea id="source" title="MusicXML"></textarea>
+            <textarea id="source" title="MusicXML" class="content"></textarea>
         </form>
     </div>
-    <div class="pure-u-1 pure-u-md-1-2">
-        <form class="pure-form pure-form-stacked" action="#" onsubmit="disableSubmit();">
-            <button class="pure-button" onclick="doTranslate();">转化...</button>
-            <a href="javascript:void(0);" class="pure-button" onclick="doSaveAs();" id="anchor">下载...</a>
+    <div class="pure-u-1 pure-u-md-1-3">
+        <div>
+            <a href="javascript:void(0);" class="pure-button" id="_default">恢复默认</a>
+        </div>
+        <div style="margin: 4px 0;">
+            <label>配置:</label>
+        </div>
+        <form class="pure-form pure-form-aligned" action="#" id="_cfg" style="margin-right: 10px;">
+            <fieldset>
+                <div class="pure-control-group">
+                    <label for="instrument_0">第一声部乐器</label>
+                    <select id="instrument_0" name="instrument0">
+                        <option value="Piano">钢琴</option>
+                        <option value="Zheng">古筝</option>
+                        <option value="Tieqin">铁琴</option>
+                        <option value="Misc">Misc</option>
+                    </select>
+                </div>
+                <div class="pure-control-group">
+                    <label for="instrument_1">第二声部乐器</label>
+                    <select id="instrument_1" name="instrument1">
+                        <option value="Piano">钢琴</option>
+                        <option value="Zheng">古筝</option>
+                        <option value="Tieqin">铁琴</option>
+                        <option value="Misc">Misc</option>
+                    </select>
+                </div>
+                <div class="pure-control-group">
+                    <label for="instrument_2">第三声部乐器</label>
+                    <select id="instrument_2" name="instrument2">
+                        <option value="Piano">钢琴</option>
+                        <option value="Zheng">古筝</option>
+                        <option value="Tieqin">铁琴</option>
+                        <option value="Misc" selected>Misc</option>
+                    </select>
+                </div>
+                <div class="pure-control-group">
+                    <label for="speed">整体速度(%)</label>
+                    <input id="speed" name="speed" type="number" value="100" placeholder="100" style="width: 100px;">
+                </div>
+                <div class="pure-control-group">
+                    <label for="repeat">处理反复</label>
+                    <input id="repeat" name="repeat" type="checkbox" checked>
+                </div>
+            </fieldset>
+        </form>
+    </div>
+    <div class="pure-u-1 pure-u-md-1-3">
+        <form class="pure-form pure-form-stacked" action="#">
+            <a href="javascript:void(0);" class="pure-button" id="_translate">转化...</a>
+            <a href="javascript:void(0);" class="pure-button" id="_anchor">下载...</a>
             <label for="target">GJM:</label>
-            <textarea id="target" title="GJM" readonly></textarea>
+            <textarea id="target" title="GJM" class="content" readonly></textarea>
         </form>
     </div>
     <div class="pure-u-1 notes">
+        <div class="note">
+            <div class="date">2018.08.29</div>
+            <span>更新:</span>
+            <ul class="update">
+                <li>加入一些配置项</li>
+                <li>变更脚本的CDN为国内源</li>
+            </ul>
+            <span>修正:</span>
+            <ul class="fix">
+                <li>修正音部谱号的序号处理错误导致的临时谱号变更错乱</li>
+            </ul>
+            <span>计划:</span>
+            <ul class="todo">
+                <li>计算正确的DurationStampMax</li>
+                <li>自定义更多的属性</li>
+            </ul>
+        </div>
         <div class="note">
             <div class="date">2018.08.25</div>
             <span>更新:</span>

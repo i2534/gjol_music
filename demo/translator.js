@@ -92,7 +92,7 @@ function XE(ele) {
     };
 }
 
-function Translator(musicXML) {
+function Translator(musicXML, cfg) {
 
     var parse = function (xml) {
         var dom;
@@ -324,18 +324,19 @@ function Translator(musicXML) {
     };
 
     var Track = function (root) {
-        var Part = function () {
+        var Part = function (index) {
+            var instrument = cfg[ 'instrument' + index ] || 'Piano';
             return {
                 MeasureKeySignatureMap : new Group(),
                 MeasureClefTypeMap : new Group(),
-                MeasureInstrumentTypeMap : new Group().add(new Tuple(0, 'Piano')),
+                MeasureInstrumentTypeMap : new Group().add(new Tuple(0, instrument)),
                 MeasureVolumeCurveMap : new Group().add(new Tuple(0, [ 1.0, 0.8, 0.4, 0.5, 0.8, 0.7, 0.4, 0.3 ])),
                 MeasureVolumeMap : new Group().add(new Tuple(0, 1.0)),
                 measures : new List()
             };
         };
 
-        parts = [ new Part(), new Part(), new Part() ];
+        parts = [ new Part(0), new Part(1), new Part(2) ];
         var track = {};
         parts.each(function (p, i) {
             track[ '[' + i + ']' ] = p;
@@ -386,7 +387,7 @@ function Translator(musicXML) {
                     });
                 }
                 if (tempo) {
-                    info.MeasureBeatsPerMinuteMap.add(new Tuple(measureCount, tempo));
+                    info.MeasureBeatsPerMinuteMap.add(new Tuple(measureCount, Math.round(tempo * speed)));
                     return false;
                 }
             });
@@ -394,7 +395,7 @@ function Translator(musicXML) {
         })(me.children('direction'));
 
         if (!bpm && measureCount === 0) {
-            info.MeasureBeatsPerMinuteMap.add(new Tuple(0, 120));
+            info.MeasureBeatsPerMinuteMap.add(new Tuple(0, Math.round(120 * speed)));
         }
 
         var sti = (function attributes(as) {
@@ -416,7 +417,9 @@ function Translator(musicXML) {
                 divisions = dis;
             }
 
-            as.children('clef').each(function (clef, i) {
+            as.children('clef').each(function (clef) {
+                var number = clef.attr('number');
+                var i = parseInt(number) - 1;
                 if (i >= parts.length) {
                     return false;
                 }
@@ -501,61 +504,63 @@ function Translator(musicXML) {
             });
         })(me.children('note'));
 
-        var result = (function barline(bes) {
-            var ret = [];
-            bes.each(function (e) {
-                var repeat = e.child('repeat');
-                if (repeat) {
-                    var direction = repeat.attr('direction');
-                    if ('forward' === direction) {// |:
-                        ret.push('>');
-                    } else if ('backward' === direction) {// :|
-                        ret.push('<');
-                    }
-                }
-                var ending = e.child('ending');
-                if (ending) {
-                    var type = ending.attr('type');//start stop discontinue
-                    if ('start' === type) {
-                        ret.push('+');
-                    } else if ('stop' === type) {
-                        ret.push('-');
-                    }
-                }
-            });
-            return ret.join('');
-        })(me.children('barline'));
-        (function repeat(baseline) {
-            if (baseline.includes('>')) {
-                lastRepeatStart = index;
-            }
-            if (baseline.includes('+')) {
-                skipOn = true;
-            }
-            if (skipOn) {
-                repeatSkip.push(index);
-            }
-            if (baseline.includes('-')) {
-                skipOn = false;
-            }
-            if (baseline.includes('<')) {
-                var end = index, start = lastRepeatStart;
-                console.log('Repeat measure from ' + start + ' to ' + end);
-
-                parts.each(function (part) {
-                    var pms = part.measures;
-                    for (var j = pms.size(); j <= index; j++) {
-                        pms.add({ DurationStampMax : 0, NotePackCount : 0 });
-                    }
-                    for (var k = start; k <= end; k++) {
-                        if (repeatSkip.indexOf(k) !== -1) {
-                            continue;
+        if (enableRepeat) {
+            var result = (function barline(bes) {
+                var ret = [];
+                bes.each(function (e) {
+                    var repeat = e.child('repeat');
+                    if (repeat) {
+                        var direction = repeat.attr('direction');
+                        if ('forward' === direction) {// |:
+                            ret.push('>');
+                        } else if ('backward' === direction) {// :|
+                            ret.push('<');
                         }
-                        pms.add(pms.get(k));
+                    }
+                    var ending = e.child('ending');
+                    if (ending) {
+                        var type = ending.attr('type');//start stop discontinue
+                        if ('start' === type) {
+                            ret.push('+');
+                        } else if ('stop' === type) {
+                            ret.push('-');
+                        }
                     }
                 });
-            }
-        })(result);
+                return ret.join('');
+            })(me.children('barline'));
+            (function repeat(baseline) {
+                if (baseline.includes('>')) {
+                    lastRepeatStart = index;
+                }
+                if (baseline.includes('+')) {
+                    skipOn = true;
+                }
+                if (skipOn) {
+                    repeatSkip.push(index);
+                }
+                if (baseline.includes('-')) {
+                    skipOn = false;
+                }
+                if (baseline.includes('<')) {
+                    var end = index, start = lastRepeatStart;
+                    console.log('Repeat measure from ' + start + ' to ' + end);
+
+                    parts.each(function (part) {
+                        var pms = part.measures;
+                        for (var j = pms.size(); j <= index; j++) {
+                            pms.add({ DurationStampMax : 0, NotePackCount : 0 });
+                        }
+                        for (var k = start; k <= end; k++) {
+                            if (repeatSkip.indexOf(k) !== -1) {
+                                continue;
+                            }
+                            pms.add(pms.get(k));
+                        }
+                    });
+                }
+            })(result);
+        }
 
         cache.each(function (m) {
             m.NotePackCount = m.notes.size();
@@ -704,12 +709,21 @@ function Translator(musicXML) {
     var notation = {
         Version : '1.1.0.0'
     };
+    var speed = (function (v) {
+        var i = parseInt(v);
+        if (isNaN(i)) {
+            return 1;
+        }
+        return Math.max(0.5, Math.min(3, i / 100));
+    })(cfg.speed);
+
     var measureCount = 0;
     var parts = [];
     var lastStaff = 1;
 
     var divisions = 1;
 
+    var enableRepeat = 'on' === cfg.repeat;
     var lastRepeatStart = 0;
     var skipOn = false;
     var repeatSkip = [];

@@ -1,7 +1,10 @@
-textarea {
+.content {
     width: 90%;
     height: 500px;
-    border: 1px solid green;
+}
+
+a {
+    margin: 4px 0;
 }
 
 .pure-g {
