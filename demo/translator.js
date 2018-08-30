@@ -1,4 +1,14 @@
 /*
+ *
+ * Project Name: gjm-translator
+ * Author: i2534
+ * Author URI: https://github.com/i2534/gjol_music
+ * Description: MusicXML/MXL/MIDI(future) -> GJM
+ * License: Apache-2.0
+ *
+ */
+
+/*
  XML element wrapper
  */
 function XE(ele) {
@@ -292,8 +302,8 @@ function Translator(musicXML, cfg) {
     var Information = function (root) {
         var info = {
             Version : '1.1.0.0',
-            NotationName : '未知名称',
-            NotationAuthor : '未知作者',
+            NotationName : null,
+            NotationAuthor : null,
             NotationTranslater : 'MXLTranslator',
             NotationCreator : '凤仪(百草谷)',
             Volume : 1,
@@ -319,6 +329,9 @@ function Translator(musicXML, cfg) {
                 }
             });
         })(root.find('identification'));
+
+        info.NotationName = cfg.name || info.NotationName || '未知名称';
+        info.NotationAuthor = cfg.author || info.NotationAuthor || '未知作者';
 
         return info;
     };

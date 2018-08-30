@@ -17,18 +17,59 @@
     <link rel="stylesheet" href="./demo/style.css">
 
     <script type="text/javascript" src="https://cdn.bootcss.com/jquery/3.3.1/jquery.min.js"></script>
+    <script type="text/javascript" src="https://cdn.bootcss.com/jszip/3.1.5/jszip.js"></script>
+    <script type="text/javascript" src="./demo/midi-parser.js"></script>
     <script type="text/javascript" src="./demo/translator.js"></script>
 
     <script type="text/javascript">
         $(function () {
-            var name;
+            function toHex(array) {
+                var v = [];
+                array.forEach(function (item) {
+                    var hex = item.toString(16);
+                    if (hex.length === 1) {
+                        v.push('0');
+                    }
+                    v.push(hex);
+                });
+                return v.join('').toUpperCase();
+            }
+
+            function unzip(data) {
+                JSZip.loadAsync(data).then(function (zip) {
+                    zip.file('META-INF/container.xml').async('text').then(function (xml) {
+                        var doc = $.parseXML(xml);
+                        var root = new XE(doc.documentElement).select('/container/rootfiles/rootfile');
+                        if (root.length) {
+                            var path = root[ 0 ].attr('full-path');
+                            zip.file(path).async('text').then(function (mxl) {
+                                $('#_source').data('type', 'mxl').val(mxl || '');
+                            });
+                        }
+                    });
+                }, function (e) {
+                    alert(e.message);
+                });
+            }
+
             $('#_upload').on('change', function (e) {
-                name = '';
                 if (window.FileReader) {
+                    var src = $('#_source').removeData();
                     var reader = new FileReader();
-                    reader.onload = function () {
-                        var data = reader.result;
-                        $('#source').val(data || '');
+                    reader.onloadend = function () {
+                        var data = new Uint8Array(reader.result);
+                        var magic = toHex(data.subarray(0, 4));
+                        if ('3C3F786D' === magic) {//XML
+                            var dec = new TextDecoder('UTF-8');
+                            src.data('type', 'mxl').val(dec.decode(data) || '');
+                        } else if ('504B0304' === magic) {//ZIP
+                            unzip(data);
+                        } else if ('4D546864' === magic) {//MIDI
+                            var midi = MIDIParser.parse(data);
+                            src.data('type', 'mid').val(JSON.stringify(midi));
+                        } else {
+                            alert('未知的文件类型: ' + magic);
+                        }
                     };
                     reader.onerror = function () {
                         alert(reader.error.message);
@@ -36,34 +77,44 @@
 
                     var input = e.target;
                     var file = input.files[ 0 ];
-                    name = file.name;
-                    reader.readAsText(file);
+                    src.data('name', file.name);
+                    reader.readAsArrayBuffer(file);
                 } else {
-                    alert('你的浏览器太落后了,请自行将MusicXML的内容粘贴到源');
+                    alert('你的浏览器太落后了,请自行将MusicXML的内容粘贴到Source');
                 }
             });
             $('#_translate').on('click', function () {
-                var data = $('#source').val();
-                var target = $('#target').val('');
+                var src = $('#_source');
+                var data = src.val();
+                var target = $('#_target').val('');
 
                 var cfg = {};
                 $.each($('#_cfg').serializeArray(), function (_, o) {
                     cfg[ o.name ] = o.value;
                 });
 
-                var translator = new Translator(data, cfg);
-                var result = translator.translate();
-                target.val(result || '');
+                if (cfg.name) {
+                    src.data('name', cfg.name);
+                }
+                cfg.type = src.data('type');
+
+                if (cfg.type === 'mid') {
+                    alert('MIDI 暂时还不能转换');
+                } else {
+                    var translator = new Translator(data, cfg);
+                    var result = translator.translate();
+                    target.val(result || '');
+                }
             });
             $('#_anchor').on('click', function () {
                 var anchor = this;
-                var val = $('#target').val();
+                var val = $('#_target').val();
                 var blob = new Blob([ val ], { type : 'text/plain' });
-                anchor.download = (name || 'html') + '.gjm';
+                anchor.download = ($('#_source').data('name') || '无名') + '.gjm';
                 anchor.href = (window.webkitURL || window.URL).createObjectURL(blob);
                 anchor.dataset.downloadurl = [ 'text/plain', anchor.download, anchor.href ].join(':');
             });
-            $('#speed').on('change, mouseup, keyup, blur, click', function () {
+            $('#_speed').on('change, mouseup, keyup, blur, click', function () {
                 var num = parseInt($(this).val());
                 if (num) {
                     num = Math.max(50, Math.min(300, num));
@@ -72,6 +123,46 @@
                 }
                 $(this).val(num);
             });
+
+            var noteURL = './demo/notes.json';//'http://127.0.0.1:8887/notes.json';
+            $.getJSON(noteURL, function (data) {
+                if ($.isArray(data)) {
+                    var make = function (note) {
+                        var div = $('<div class="note"></div>');
+                        div.append('<div class="date">' + note.time + '</div>');
+                        $.each({
+                            'update' : '更新',
+                            'fix' : '修正',
+                            'todo' : '计划'
+                        }, function (name, title) {
+                            var data = note[ name ];
+                            if ($.isArray(data) && data.length) {
+                                div.append('<span>' + title + ':</span>');
+                                var ul = $('<ul class="' + name + '">').appendTo(div);
+                                $.each(data, function (_, v) {
+                                    ul.append('<li>' + v + '</li>');
+                                });
+                            }
+                        });
+                        return div;
+                    };
+                    var showCount = 3;
+                    var array = data.reverse(), len = array.length;
+                    var ns = $('.notes');
+                    for (var i = 0, max = Math.min(showCount, len); i < max; i++) {
+                        ns.append(make(array[ i ]));
+                    }
+                    if (len > showCount) {
+                        var btn = $('<a href="javascript:void(0);" class="pure-button">更多...</a>').appendTo(ns);
+                        btn.on('click', function () {
+                            $(this).remove();
+                            for (var i = showCount, max = len; i < max; i++) {
+                                ns.append(make(array[ i ]));
+                            }
+                        });
+                    }
+                }
+            });
         });
     </script>
 </head>
@@ -79,15 +170,17 @@
 
 <div class="pure-g">
     <div class="pure-u-1">
-        <h2>MusicXML -> GJM</h2>
-        <p>不要使用 <b style="color:red;">IE</b> !!!, 详细情况见 <a href="http://bbs.ngacn.cc/read.php?tid=14725485" target="_blank">我的帖子</a></p>
+        <h2>MusicXML / MXL(压缩过的MusicXML) / MIDI(逐步支持) -> GJM</h2>
+        <p>不要使用 <b style="color:red;">IE</b> !!!, 详细情况见
+            <a href="http://bbs.ngacn.cc/read.php?tid=14725485" target="_blank">我的帖子</a>
+        </p>
     </div>
     <div class="pure-u-1 pure-u-md-1-3">
         <form class="pure-form pure-form-stacked" action="#">
             <label for="_upload" class="pure-button">打开...</label>
-            <input id="_upload" type="file" accept="application/vnd.recordare.musicxml+xml" hidden/>
-            <label for="source">MusicXML:</label>
-            <textarea id="source" title="MusicXML" class="content"></textarea>
+            <input id="_upload" type="file" hidden/>
+            <label for="_source">Source:</label>
+            <textarea id="_source" title="MusicXML" class="content"></textarea>
         </form>
     </div>
     <div class="pure-u-1 pure-u-md-1-3">
@@ -100,8 +193,16 @@
         <form class="pure-form pure-form-aligned" action="#" id="_cfg" style="margin-right: 10px;">
             <fieldset>
                 <div class="pure-control-group">
-                    <label for="instrument_0">第一声部乐器</label>
-                    <select id="instrument_0" name="instrument0">
+                    <label for="_name">曲谱名称</label>
+                    <input id="_name" name="name" type="text" placeholder="默认" style="width: 150px;">
+                </div>
+                <div class="pure-control-group">
+                    <label for="_name">曲谱作者</label>
+                    <input id="_author" name="author" type="text" placeholder="默认" style="width: 150px;">
+                </div>
+                <div class="pure-control-group">
+                    <label for="_instrument_0">第一声部乐器</label>
+                    <select id="_instrument_0" name="instrument0">
                         <option value="Piano">钢琴</option>
                         <option value="Zheng">古筝</option>
                         <option value="Tieqin">铁琴</option>
@@ -109,8 +210,8 @@
                     </select>
                 </div>
                 <div class="pure-control-group">
-                    <label for="instrument_1">第二声部乐器</label>
-                    <select id="instrument_1" name="instrument1">
+                    <label for="_instrument_1">第二声部乐器</label>
+                    <select id="_instrument_1" name="instrument1">
                         <option value="Piano">钢琴</option>
                         <option value="Zheng">古筝</option>
                         <option value="Tieqin">铁琴</option>
@@ -118,8 +219,8 @@
                     </select>
                 </div>
                 <div class="pure-control-group">
-                    <label for="instrument_2">第三声部乐器</label>
-                    <select id="instrument_2" name="instrument2">
+                    <label for="_instrument_2">第三声部乐器</label>
+                    <select id="_instrument_2" name="instrument2">
                         <option value="Piano">钢琴</option>
                         <option value="Zheng">古筝</option>
                         <option value="Tieqin">铁琴</option>
@@ -127,12 +228,12 @@
                     </select>
                 </div>
                 <div class="pure-control-group">
-                    <label for="speed">整体速度(%)</label>
-                    <input id="speed" name="speed" type="number" value="100" placeholder="100" style="width: 100px;">
+                    <label for="_speed">整体速度(%)</label>
+                    <input id="_speed" name="speed" type="number" value="100" placeholder="100" style="width: 100px;">
                 </div>
                 <div class="pure-control-group">
-                    <label for="repeat">处理反复</label>
-                    <input id="repeat" name="repeat" type="checkbox" checked>
+                    <label for="_repeat">处理反复</label>
+                    <input id="_repeat" name="repeat" type="checkbox" checked>
                 </div>
             </fieldset>
         </form>
@@ -141,55 +242,11 @@
         <form class="pure-form pure-form-stacked" action="#">
             <a href="javascript:void(0);" class="pure-button" id="_translate">转化...</a>
             <a href="javascript:void(0);" class="pure-button" id="_anchor">下载...</a>
-            <label for="target">GJM:</label>
-            <textarea id="target" title="GJM" class="content" readonly></textarea>
+            <label for="_target">GJM:</label>
+            <textarea id="_target" title="GJM" class="content" readonly></textarea>
         </form>
     </div>
-    <div class="pure-u-1 notes">
-        <div class="note">
-            <div class="date">2018.08.29</div>
-            <span>更新:</span>
-            <ul class="update">
-                <li>加入一些配置项</li>
-                <li>变更脚本的CDN为国内源</li>
-            </ul>
-            <span>修正:</span>
-            <ul class="fix">
-                <li>修正音部谱号的序号处理错误导致的临时谱号变更错乱</li>
-            </ul>
-            <span>计划:</span>
-            <ul class="todo">
-                <li>计算正确的DurationStampMax</li>
-                <li>自定义更多的属性</li>
-            </ul>
-        </div>
-        <div class="note">
-            <div class="date">2018.08.25</div>
-            <span>更新:</span>
-            <ul class="update">
-                <li>琶音,连音处理</li>
-                <li>休止符的节拍处理</li>
-            </ul>
-            <span>计划:</span>
-            <ul class="todo">
-                <li>计算正确的DurationStampMax</li>
-                <li>自定义一些属性</li>
-            </ul>
-        </div>
-        <div class="note">
-            <div class="date">2018.08.24</div>
-            <span>修正:</span>
-            <ul class="fix">
-                <li>修正因为默认的Array.forEach事件没有终止条件而引发的各种问题</li>
-                <li>修正MeasureKeySignatureMap因为值是0时导致的值空白</li>
-            </ul>
-            <span>计划:</span>
-            <ul class="todo">
-                <li>根据节拍计算正确的休止符</li>
-                <li>处理琶音</li>
-            </ul>
-        </div>
-    </div>
+    <div class="pure-u-1 notes"></div>
 </div>
 </body>
 </html>

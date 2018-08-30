@@ -1,3 +1,7 @@
+textarea {
+    font-size: 10px;
+}
+
 .content {
     width: 90%;
     height: 500px;
