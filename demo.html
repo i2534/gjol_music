@@ -19,6 +19,38 @@
     <script type="text/javascript" src="https://cdn.bootcss.com/jquery/3.3.1/jquery.min.js"></script>
     <script type="text/javascript" src="https://cdn.bootcss.com/jszip/3.1.5/jszip.js"></script>
     <script type="text/javascript" src="./demo/midi-parser.js"></script>
+
+    <script type="text/javascript">
+        window._message = function (message, level) {
+            var cls = '';
+            var lv = (function (lv) {
+                if (lv) {
+                    if (lv === 1 || lv === 'warn') {
+                        cls = 'warn';
+                        return '警告';
+                    }
+                    if (lv === 2 || lv === 'error') {
+                        cls = 'error';
+                        return '错误';
+                    }
+                }
+                return '信息';
+            })(level);
+            var time = function () {
+                var fix = function (v) {
+                    return v < 10 ? ('0' + v) : (v + '');
+                };
+                var date = new Date();
+                var h = date.getHours(), m = date.getMinutes(), s = date.getSeconds(), i = date.getMilliseconds();
+                return fix(h) + ':' + fix(m) + ':' + fix(s) + '.' + fix(i);
+            };
+            var msg = time() + ' ' + lv + ': ' + message;
+            $('#_message').append($('<span>' + msg + '</span>').addClass(cls)).scrollTop(function () {
+                return this.scrollHeight;
+            });
+        };
+    </script>
+
     <script type="text/javascript" src="./demo/translator.js"></script>
 
     <script type="text/javascript">
@@ -39,7 +71,7 @@
                 JSZip.loadAsync(data).then(function (zip) {
                     zip.file('META-INF/container.xml').async('text').then(function (xml) {
                         var doc = $.parseXML(xml);
-                        var root = new XE(doc.documentElement).select('/container/rootfiles/rootfile');
+                        var root = new MXL.Element(doc.documentElement).select('/container/rootfiles/rootfile');
                         if (root.length) {
                             var path = root[ 0 ].attr('full-path');
                             zip.file(path).async('text').then(function (mxl) {
@@ -48,7 +80,7 @@
                         }
                     });
                 }, function (e) {
-                    alert(e.message);
+                    _message(e.message, 2);
                 });
             }
 
@@ -57,6 +89,8 @@
                     var src = $('#_source').removeData();
                     var reader = new FileReader();
                     reader.onloadend = function () {
+                        _message('Open file ' + src.data('name'));
+
                         var data = new Uint8Array(reader.result);
                         var magic = toHex(data.subarray(0, 4));
                         if ('3C3F786D' === magic) {//XML
@@ -68,11 +102,11 @@
                             var midi = MIDIParser.parse(data);
                             src.data('type', 'mid').val(JSON.stringify(midi));
                         } else {
-                            alert('未知的文件类型: ' + magic);
+                            _message('未知的文件类型: ' + magic, 2);
                         }
                     };
                     reader.onerror = function () {
-                        alert(reader.error.message);
+                        _message(reader.error.message, 2);
                     };
 
                     var input = e.target;
@@ -80,10 +114,12 @@
                     src.data('name', file.name);
                     reader.readAsArrayBuffer(file);
                 } else {
-                    alert('你的浏览器太落后了,请自行将MusicXML的内容粘贴到Source');
+                    _message('你的浏览器太落后了,请自行将MusicXML的内容粘贴到Source', 2);
                 }
             });
             $('#_translate').on('click', function () {
+                $('#_message').empty();
+
                 var src = $('#_source');
                 var data = src.val();
                 var target = $('#_target').val('');
@@ -98,12 +134,17 @@
                 }
                 cfg.type = src.data('type');
 
+                var translator;
                 if (cfg.type === 'mid') {
-                    alert('MIDI 暂时还不能转换');
+                    translator = new SMF.Translator(data, cfg);
                 } else {
-                    var translator = new Translator(data, cfg);
+                    translator = new MXL.Translator(data, cfg);
+                }
+                if (translator) {
                     var result = translator.translate();
                     target.val(result || '');
+                } else {
+                    _message('找不到有效的转换器', 2);
                 }
             });
             $('#_anchor').on('click', function () {
@@ -201,7 +242,7 @@
                     <input id="_author" name="author" type="text" placeholder="默认" style="width: 150px;">
                 </div>
                 <div class="pure-control-group">
-                    <label for="_instrument_0">第一声部乐器</label>
+                    <label for="_instrument_0">第一音轨乐器</label>
                     <select id="_instrument_0" name="instrument0">
                         <option value="Piano">钢琴</option>
                         <option value="Zheng">古筝</option>
@@ -210,7 +251,7 @@
                     </select>
                 </div>
                 <div class="pure-control-group">
-                    <label for="_instrument_1">第二声部乐器</label>
+                    <label for="_instrument_1">第二音轨乐器</label>
                     <select id="_instrument_1" name="instrument1">
                         <option value="Piano">钢琴</option>
                         <option value="Zheng">古筝</option>
@@ -219,7 +260,7 @@
                     </select>
                 </div>
                 <div class="pure-control-group">
-                    <label for="_instrument_2">第三声部乐器</label>
+                    <label for="_instrument_2">第三音轨乐器</label>
                     <select id="_instrument_2" name="instrument2">
                         <option value="Piano">钢琴</option>
                         <option value="Zheng">古筝</option>
@@ -245,6 +286,9 @@
             <label for="_target">GJM:</label>
             <textarea id="_target" title="GJM" class="content" readonly></textarea>
         </form>
+    </div>
+    <div class="pure-u-1">
+        <div class="message" id="_message" title="信息"></div>
     </div>
     <div class="pure-u-1 notes"></div>
 </div>

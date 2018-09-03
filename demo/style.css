@@ -20,6 +20,29 @@ a {
     background: rgb(66, 184, 221);
 }
 
+.message {
+    width: 95%;
+    height: 200px;
+    border: 1px solid gray;
+    background-color: #BDE5F8;
+    color: #4F8A10;
+    overflow: auto;
+}
+
+.message span {
+    white-space: nowrap;
+    display: block;
+    font-size: 14px;
+}
+
+.message .warn {
+    color: #9F6000;
+}
+
+.message .error {
+    color: #D8000C;
+}
+
 .notes {
     margin: 10px 0;
     padding: 12px;
