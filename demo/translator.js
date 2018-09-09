@@ -98,7 +98,6 @@ var _Tool = new function () {
         if (!isList) {
             ls.push('{');
         }
-
         if (o.unite) {
             ls.push(o.unite(i + 1));
         } else {
@@ -164,6 +163,7 @@ var _Tool = new function () {
         }
     };
 
+    this.PartLength = 3;
     this.ClefType = { 'G' : 'L2G', 'F' : 'L4F', 'C' : 'L3C', 'TAB' : 'L5TAB' };
     this.KeySignature = {
         '-7' : 'bC', '-6' : 'bG', '-5' : 'bD', '-4' : 'bA', '-3' : 'bE', '-2' : 'bB', '-1' : 'F',
@@ -236,6 +236,17 @@ var _Tool = new function () {
         this.get = function (index) {
             return vs[ index ];
         };
+        this.insert = function (index, o) {
+            if (Array.isArray(o)) {
+                var i = index;
+                o.each(function (item) {
+                    vs.splice(i++, 0, item);
+                });
+            } else {
+                vs.splice(index, 0, o);
+            }
+            return this;
+        };
         this.size = function () {
             return vs.length;
         };
@@ -245,6 +256,9 @@ var _Tool = new function () {
                 ls.push(self.tab(lv) + '[' + i + '] = ' + self.object(v, lv) + ',');
             });
             return ls.join('\n');
+        };
+        this.array = function () {
+            return vs;
         };
     };
 };
@@ -367,6 +381,19 @@ var MXL = (function () {
             }
         };
 
+        var measureAt = function (partIndex, measureIndex) {
+            var part = parts[ partIndex ];
+            var ms = part.measures;
+            for (var i = ms.size(); i <= measureIndex; i++) {
+                ms.add({
+                    DurationStampMax : 0,
+                    NotePackCount : 0,
+                    notes : new K.List()
+                });
+            }
+            return ms.get(measureIndex);
+        };
+
         var Information = function (root) {
             var info = {
                 Version : '1.1.0.0',
@@ -416,38 +443,96 @@ var MXL = (function () {
                     measures : new K.List()
                 };
             };
+            for (var i = 0; i < K.PartLength; i++) {
+                parts.push(new Part(i));
+            }
 
-            parts = [ new Part(0), new Part(1), new Part(2) ];
+            (function partList(pl) {
+                if (!pl) return;
+
+                var measureIndex = 0;
+                if (pl.children('part-group').length > 1) {//In Group
+                    var start, size = 0, mss = [];
+                    pl.children().each(function (e) {
+                        var name = e.name();
+                        if ('part-group' === name) {
+                            var type = e.attr('type'), num = e.attr('number');
+                            K.log('PartGroup number is ' + num + ' ' + type);
+                            if ('start' === type) {
+                                start = true;
+                            } else if ('stop' === type) {
+                                K.log('Now only support first part group!');
+                                return false;
+                            }
+                        } else if ('score-part' === name) {
+                            if (!start) {
+                                K.warn('Why part before part group? Skip it...');
+                            } else if (mss.length > parts.length) {
+                                K.warn('Part is too many, skip it...');
+                            } else {
+                                var id = e.attr('id'), pn = childText(e, 'part-name');
+                                K.log('Part id is ' + id + ', name is ' + pn);
+                                var part = root.select('part[@id=\'' + id + '\']')[ 0 ];
+                                var ms = part.children('measure');
+                                size = Math.max(size, ms.length);
+                                var map = {
+                                    '__size' : ms.length,
+                                    '__key' : []
+                                };
+                                ms.each(function (m) {
+                                    var number = m.attr('number');
+                                    if (map.hasOwnProperty(number)) {
+                                        K.warn('Measure number ' + number + ' is duplicate');
+                                    }
+                                    map[ number ] = m;
+                                    map[ '__key' ].push(number);
+                                });
+                                mss.push(map);
+                            }
+                        }
+                    });
+                    var key = [];
+                    mss.each(function (map) {
+                        if (map[ '__size' ] === size) {//只管第一个满足的,其他的不管
+                            key = map[ '__key' ];
+                            return false;
+                        }
+                    });
+                    key.each(function (k) {
+                        var max = 0;
+                        mss.each(function (map, n) {
+                            var m = map[ k ];
+                            if (m) {
+                                max = Math.max(max, Measure(m, measureIndex, n));
+                            }
+                        });
+                        measureIndex += max;
+                    });
+                } else {//Single
+                    var sp = pl.child('score-part');
+                    var id = sp.attr('id'), name = childText(sp, 'part-name');
+                    K.log('Part id is ' + id + ', name is ' + name);
+                    var part = root.select('part[@id=\'' + id + '\']')[ 0 ];
+                    var ms = part.children('measure');
+                    ms.each(function (m) {
+                        measureIndex += Measure(m, measureIndex);
+                    });
+                }
+            })(root.find('part-list'));
+
+            notation.info.MeasureAlignedCount = parts[ 0 ].measures.size();
             var track = {};
             parts.each(function (p, i) {
                 track[ '[' + i + ']' ] = p;
             });
-
-            (function partList(pl) {
-                var ids = [];
-                pl && pl.children('score-part').each(function (sp) {
-                    var id = sp.attr('id'), name = childText(sp, 'part-name');
-                    K.log('Part id is ' + id + ', name is ' + name);
-                    ids.push(id);
-                });
-                return ids;
-            })(root.find('part-list')).each(function (id) {
-                var part = root.select('part[@id=\'' + id + '\']')[ 0 ];
-                part.children('measure').each(Measure);
-            });
-
-            parts.each(function (part) {
-                for (var i = part.measures.size(); i < measureCount; i++) {
-                    part.measures.add({ DurationStampMax : 0, NotePackCount : 0 });
-                }
-            });
-
             return track;
         };
 
-        var Measure = function (me, index) {
+        var Measure = function (me, index, partIndex) {
+            var inGroup = partIndex !== undefined;
+
             var number = me.attr('number');
-            K.log('Measure number is ' + number + ', index is ' + index);
+            K.log('Measure number is ' + number + ', real index is ' + index);
 
             var info = notation.info;
 
@@ -468,30 +553,25 @@ var MXL = (function () {
                         });
                     }
                     if (tempo) {
-                        info.MeasureBeatsPerMinuteMap.add(new K.Tuple(measureCount, Math.round(tempo * speed)));
+                        info.MeasureBeatsPerMinuteMap.add(new K.Tuple(index, Math.round(tempo * speed)));
                         return false;
                     }
                 });
                 return tempo;
             })(me.children('direction'));
 
-            if (!bpm && measureCount === 0) {
+            if (!bpm && index === 0 && partIndex === 0) {
                 info.MeasureBeatsPerMinuteMap.add(new K.Tuple(0, Math.round(120 * speed)));
             }
 
-            var sti = (function attributes(as) {
-                var staff = 0;
+            (function attributes(as) {
                 if (!as) {
-                    return staff;
+                    return;
                 }
-
-                var staves = childText(as, 'staves');
-                if (staves) {
-                    staff = parseInt(staves);
-                }
-                if (staff > 3) {
-                    staff = 3;
-                }
+                //var staff = parseInt(childText(as, 'staves'));
+                //if (isNaN(staff)) {
+                //    staff = 1;
+                //}
 
                 var dis = parseInt(childText(as, 'divisions'));
                 if (dis) {
@@ -499,9 +579,13 @@ var MXL = (function () {
                 }
 
                 as.children('clef').each(function (clef) {
-                    var number = clef.attr('number');
-                    var i = parseInt(number) - 1;
-                    if (i >= parts.length) {
+                    var num = parseInt(clef.attr('number'));
+                    if (isNaN(num)) {
+                        num = inGroup ? partIndex : 0;
+                    } else {
+                        num -= 1;
+                    }
+                    if (num >= parts.length) {
                         return false;
                     }
 
@@ -510,16 +594,19 @@ var MXL = (function () {
                     if (!type) {
                         K.log('Clef type ' + sign + ' is not mapping');
                     } else {
-                        var part = parts[ i ];
-                        part.MeasureClefTypeMap.add(new K.Tuple(measureCount, type));
+                        parts[ num ].MeasureClefTypeMap.add(new K.Tuple(index, type));
                     }
                 });
 
                 var fifths = parseInt(childText(as.child('key'), 'fifths'));//get(KeySignature, fifths);
                 if (!isNaN(fifths)) {
-                    parts.each(function (p) {
-                        p.MeasureKeySignatureMap.add(new K.Tuple(measureCount, fifths));
-                    });
+                    if (inGroup) {
+                        parts[ partIndex ].MeasureKeySignatureMap.add(new K.Tuple(index, fifths));
+                    } else {
+                        parts.each(function (p) {
+                            p.MeasureKeySignatureMap.add(new K.Tuple(index, fifths));
+                        });
+                    }
                 }
 
                 var time = as.child('time');
@@ -538,35 +625,22 @@ var MXL = (function () {
                         }
                     }
                 }
-                return staff;
             })(me.child('attributes'));
-            if (sti === 0) sti = lastStaff;
-            else lastStaff = sti;
-
-            var cache = [];
-            for (var i = 0; i < sti; i++) {
-                var measure = {
-                    DurationStampMax : 0,
-                    NotePackCount : 0,
-                    notes : new K.List()
-                };
-                cache.push(measure);
-                parts[ i ].measures.add(measure);
-            }
 
             (function note(notes) {
                 notes.each(function (n, i) {
                     var na = Note(n, i);
 
-                    var staff = na[ 0 ];
-                    if (staff > cache.length) {
-                        K.warn('Ignore note of staff ' + staff);
+                    var staff = inGroup ? partIndex : na[ 0 ] - 1;
+
+                    if (staff >= K.PartLength) {
+                        K.warn('Ignore note of part ' + (staff + 1));
                         return;
                     }
 
                     var note = na[ 1 ], last;
 
-                    var m = cache[ staff - 1 ];
+                    var m = measureAt(staff, index);
                     var size = m.notes.size();
                     if (size === 0) {
                         note.StampIndex = 0;
@@ -590,8 +664,46 @@ var MXL = (function () {
                 });
             })(me.children('note'));
 
+            var repeatCount = 0;
+
             if (enableRepeat) {
-                var result = (function barline(bes) {
+                (function (baseline) {
+                    if (baseline.includes('>')) {
+                        lastRepeatStart = index;
+                    }
+                    if (baseline.includes('+')) {
+                        skipOn = true;
+                    }
+                    if (skipOn) {
+                        repeatSkip.push(index);
+                    }
+                    if (baseline.includes('-')) {
+                        skipOn = false;
+                    }
+                    if (baseline.includes('<')) {
+                        var end = index, start = lastRepeatStart;
+                        K.log('Repeat measure from ' + start + ' to ' + end + ', skip [' + repeatSkip.join(',') + ']');
+
+                        var array = [], skip = 0;
+                        parts.each(function (_, i) {
+                            var pms = [];
+                            for (var k = start; k <= end; k++) {
+                                if (repeatSkip.indexOf(k) !== -1) {
+                                    if (i === 0) skip++;
+                                    continue;
+                                }
+                                pms.push(measureAt(i, k));
+                            }
+                            array.push(pms);
+                        });
+
+                        parts.each(function (part, pi) {
+                            part.measures.insert(end + 1, array[ pi ]);
+                        });
+
+                        repeatCount = end - start + 1 - skip;
+                    }
+                })((function (bes) {
                     var ret = [];
                     bes.each(function (e) {
                         var repeat = e.child('repeat');
@@ -614,45 +726,14 @@ var MXL = (function () {
                         }
                     });
                     return ret.join('');
-                })(me.children('barline'));
-                (function repeat(baseline) {
-                    if (baseline.includes('>')) {
-                        lastRepeatStart = index;
-                    }
-                    if (baseline.includes('+')) {
-                        skipOn = true;
-                    }
-                    if (skipOn) {
-                        repeatSkip.push(index);
-                    }
-                    if (baseline.includes('-')) {
-                        skipOn = false;
-                    }
-                    if (baseline.includes('<')) {
-                        var end = index, start = lastRepeatStart;
-                        K.log('Repeat measure from ' + start + ' to ' + end);
-
-                        parts.each(function (part) {
-                            var pms = part.measures;
-                            for (var j = pms.size(); j <= index; j++) {
-                                pms.add({ DurationStampMax : 0, NotePackCount : 0 });
-                            }
-                            for (var k = start; k <= end; k++) {
-                                if (repeatSkip.indexOf(k) !== -1) {
-                                    continue;
-                                }
-                                pms.add(pms.get(k));
-                            }
-                        });
-                    }
-                })(result);
+                })(me.children('barline')));
             }
 
-            cache.each(function (m) {
+            for (var i = 0; i < K.PartLength; i++) {
+                var m = measureAt(i, index);
                 m.NotePackCount = m.notes.size();
-            });
-
-            measureCount = parts[ 0 ].measures.size();
+            }
+            return repeatCount + 1;
         };
 
         var Note = function (ne) {
@@ -673,10 +754,8 @@ var MXL = (function () {
             var Sign = function () {
                 return {
                     index : 0,
-                    NumberedSign : 0,
-                    PlayingPitchIndex : 0,
-                    AlterantType : 'NoControl',
-                    Volume : 0.0
+                    NumberedSign : 0, PlayingPitchIndex : 0,
+                    AlterantType : 'NoControl', Volume : 0.0
                 };
             };
 
@@ -705,8 +784,6 @@ var MXL = (function () {
             note.isChrod = !!ne.child('chord');
             var dotCount = ne.children('dot').length;
             note.IsDotted = dotCount > 0;
-
-            var index = parseInt(childText(ne, 'staff')) || 1;
 
             (function tie(te) {
                 if (!te) return;
@@ -760,9 +837,9 @@ var MXL = (function () {
                         v *= 7 / 4;
                     }
                     v /= duration;
-                    var dt = K.get(K.DurationType, v + '');
-                    if (dt) {
-                        note.DurationType = dt;
+                    var rdt = K.get(K.DurationType, v + '');
+                    if (rdt) {
+                        note.DurationType = rdt;
                     }
                 }
 
@@ -788,8 +865,8 @@ var MXL = (function () {
                     }
                 })(ne.child('pitch'));
             }
-
-            return [ index, note ];
+            var index = parseInt(childText(ne, 'staff'));
+            return [ isNaN(index) ? 1 : index, note ];
         };
 
         var notation = {
@@ -803,9 +880,7 @@ var MXL = (function () {
             return Math.max(0.5, Math.min(3, i / 100));
         })(cfg.speed);
 
-        var measureCount = 0;
         var parts = [];
-        var lastStaff = 1;
 
         var divisions = 1;
 
@@ -831,8 +906,6 @@ var MXL = (function () {
 
                     notation.info = Information(root);
                     notation.track = Track(root);
-
-                    notation.info.MeasureAlignedCount = measureCount;
 
                     var ls = [];
                     ls.push(K.unite('Version', notation.Version));
@@ -863,9 +936,9 @@ var SMF = (function () {
         var K = _Tool;
 
         var smf = JSON.parse(midi);
-        smf.track.forEach(function(track) {
+        smf.track.forEach(function (track) {
             var time = 0;
-            track.event.forEach(function(event) {
+            track.event.forEach(function (event) {
                 event.realTime = time;
                 time += event.deltaTime;
             });

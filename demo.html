@@ -111,8 +111,11 @@
 
                     var input = e.target;
                     var file = input.files[ 0 ];
-                    src.data('name', file.name);
-                    reader.readAsArrayBuffer(file);
+                    if (file) {
+                        src.data('name', file.name);
+                        $('#_sourceName').text(file.name);
+                        reader.readAsArrayBuffer(file);
+                    }
                 } else {
                     _message('你的浏览器太落后了,请自行将MusicXML的内容粘贴到Source', 2);
                 }
@@ -220,7 +223,7 @@
         <form class="pure-form pure-form-stacked" action="#">
             <label for="_upload" class="pure-button">打开...</label>
             <input id="_upload" type="file" hidden/>
-            <label for="_source">Source:</label>
+            <label for="_source">Source: <span id="_sourceName"></span></label>
             <textarea id="_source" title="MusicXML" class="content"></textarea>
         </form>
     </div>
@@ -265,7 +268,7 @@
                         <option value="Piano">钢琴</option>
                         <option value="Zheng">古筝</option>
                         <option value="Tieqin">铁琴</option>
-                        <option value="Misc" selected>Misc</option>
+                        <option value="Misc">Misc</option>
                     </select>
                 </div>
                 <div class="pure-control-group">
