@@ -84,23 +84,37 @@
                 });
             }
 
+            function clear() {
+                return $('#_message').empty();
+            }
+
+            var midi;
+
             $('#_upload').on('change', function (e) {
+                midi = null;
+                var file = e.target.files[ 0 ];
+                var name = file.name;
+                clear();
+                _message('开始读取文件: ' + name);
                 if (window.FileReader) {
                     var src = $('#_source').removeData();
                     var reader = new FileReader();
                     reader.onloadend = function () {
-                        _message('Open file ' + src.data('name'));
+                        _message('文件读取完毕,尝试解析...');
 
                         var data = new Uint8Array(reader.result);
                         var magic = toHex(data.subarray(0, 4));
                         if ('3C3F786D' === magic) {//XML
                             var dec = new TextDecoder('UTF-8');
                             src.data('type', 'mxl').val(dec.decode(data) || '');
+                            _message('解析为 MusicXML');
                         } else if ('504B0304' === magic) {//ZIP
                             unzip(data);
+                            _message('解析为 Compression MusicXML');
                         } else if ('4D546864' === magic) {//MIDI
-                            var midi = MIDIParser.parse(data);
+                            midi = MIDIParser.parse(data);
                             src.data('type', 'mid').val(JSON.stringify(midi));
+                            _message('解析为 MIDI');
                         } else {
                             _message('未知的文件类型: ' + magic, 2);
                         }
@@ -109,11 +123,9 @@
                         _message(reader.error.message, 2);
                     };
 
-                    var input = e.target;
-                    var file = input.files[ 0 ];
                     if (file) {
-                        src.data('name', file.name);
-                        $('#_sourceName').text(file.name);
+                        src.data('name', name);
+                        $('#_sourceName').text(name);
                         reader.readAsArrayBuffer(file);
                     }
                 } else {
@@ -121,7 +133,8 @@
                 }
             });
             $('#_translate').on('click', function () {
-                $('#_message').empty();
+                _message('开始转换...');
+                console.log('Translate...');
 
                 var src = $('#_source');
                 var data = src.val();
@@ -136,16 +149,18 @@
                     src.data('name', cfg.name);
                 }
                 cfg.type = src.data('type');
-
                 var translator;
                 if (cfg.type === 'mid') {
-                    translator = new SMF.Translator(data, cfg);
+                    translator = new SMF.Translator(midi ? midi : data, cfg);
                 } else {
                     translator = new MXL.Translator(data, cfg);
                 }
                 if (translator) {
+                    console.log('Start...');
                     var result = translator.translate();
                     target.val(result || '');
+                    console.log('Finish');
+                    _message('转换完毕');
                 } else {
                     _message('找不到有效的转换器', 2);
                 }
@@ -214,7 +229,7 @@
 
 <div class="pure-g">
     <div class="pure-u-1">
-        <h2>MusicXML / MXL(压缩过的MusicXML) / MIDI(逐步支持) -> GJM</h2>
+        <h2>MusicXML / MXL(压缩过的MusicXML) / MIDI(初步支持) -> GJM</h2>
         <p>不要使用 <b style="color:red;">IE</b> !!!, 详细情况见
             <a href="http://bbs.ngacn.cc/read.php?tid=14725485" target="_blank">我的帖子</a>
         </p>

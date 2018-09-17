@@ -37,6 +37,95 @@ if (!Array.prototype.each) {
     };
 }
 
+// From https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/map
+if (!Array.prototype.map) {
+
+    Array.prototype.map = function (callback/*, thisArg*/) {
+
+        var T, A, k;
+
+        if (this == null) {
+            throw new TypeError('this is null or not defined');
+        }
+
+        // 1. Let O be the result of calling ToObject passing the |this|
+        //    value as the argument.
+        var O = Object(this);
+
+        // 2. Let lenValue be the result of calling the Get internal
+        //    method of O with the argument "length".
+        // 3. Let len be ToUint32(lenValue).
+        var len = O.length >>> 0;
+
+        // 4. If IsCallable(callback) is false, throw a TypeError exception.
+        // See: http://es5.github.com/#x9.11
+        if (typeof callback !== 'function') {
+            throw new TypeError(callback + ' is not a function');
+        }
+
+        // 5. If thisArg was supplied, let T be thisArg; else let T be undefined.
+        if (arguments.length > 1) {
+            T = arguments[ 1 ];
+        }
+
+        // 6. Let A be a new array created as if by the expression new Array(len)
+        //    where Array is the standard built-in constructor with that name and
+        //    len is the value of len.
+        A = new Array(len);
+
+        // 7. Let k be 0
+        k = 0;
+
+        // 8. Repeat, while k < len
+        while (k < len) {
+
+            var kValue, mappedValue;
+
+            // a. Let Pk be ToString(k).
+            //   This is implicit for LHS operands of the in operator
+            // b. Let kPresent be the result of calling the HasProperty internal
+            //    method of O with argument Pk.
+            //   This step can be combined with c
+            // c. If kPresent is true, then
+            if (k in O) {
+
+                // i. Let kValue be the result of calling the Get internal
+                //    method of O with argument Pk.
+                kValue = O[ k ];
+
+                // ii. Let mappedValue be the result of calling the Call internal
+                //     method of callback with T as the this value and argument
+                //     list containing kValue, k, and O.
+                mappedValue = callback.call(T, kValue, k, O);
+
+                // iii. Call the DefineOwnProperty internal method of A with arguments
+                // Pk, Property Descriptor
+                // { Value: mappedValue,
+                //   Writable: true,
+                //   Enumerable: true,
+                //   Configurable: true },
+                // and false.
+
+                // In browsers that support Object.defineProperty, use the following:
+                // Object.defineProperty(A, k, {
+                //   value: mappedValue,
+                //   writable: true,
+                //   enumerable: true,
+                //   configurable: true
+                // });
+
+                // For best browser support, use the following:
+                A[ k ] = mappedValue;
+            }
+            // d. Increase k by 1.
+            k++;
+        }
+
+        // 9. return A
+        return A;
+    };
+}
+
 // From https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/includes
 if (!String.prototype.includes) {
     String.prototype.includes = function (search, start) {
@@ -49,6 +138,16 @@ if (!String.prototype.includes) {
         } else {
             return this.indexOf(search, start) !== -1;
         }
+    };
+}
+
+// From https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/endsWith
+if (!String.prototype.endsWith) {
+    String.prototype.endsWith = function (search, this_len) {
+        if (this_len === undefined || this_len > this.length) {
+            this_len = this.length;
+        }
+        return this.substring(this_len - search.length, this_len) === search;
     };
 }
 
@@ -65,6 +164,9 @@ var _Tool = new function () {
             }
         }
     };
+    this.info = function (message) {
+        this.log(message);
+    };
     this.warn = function (m) {
         this.log(m, 1);
     };
@@ -78,6 +180,10 @@ var _Tool = new function () {
 
     this.isLowerCase = function (c) {
         return c >= 'a' && c <= 'z';
+    };
+
+    this.isObject = function (o) {
+        return (o !== null && typeof o === 'object');
     };
 
     this.tab = function (n) {
@@ -153,6 +259,16 @@ var _Tool = new function () {
         }
     };
 
+    this.names = function (o) {
+        var array = [];
+        for (var n in o) {
+            if (o.hasOwnProperty(n)) {
+                array.push(n);
+            }
+        }
+        return array;
+    };
+
     this.key = function (o, val) {
         for (var n in o) {
             if (o.hasOwnProperty(n)) {
@@ -161,6 +277,51 @@ var _Tool = new function () {
                 }
             }
         }
+    };
+
+    this.isEqual = function (o1, o2) {
+        if (o1 == o2) {
+            return true;
+        }
+        if (this.isObject(o1)) {
+            if (!this.isObject(o2)) {
+                return false;
+            }
+            var as = function (a, b) {
+                return a > b ? 1 : a < b ? -1 : 0;
+            };
+            var n1 = this.names(o1).sort(as), n2 = this.names(o2).sort(as);
+            if (n1.length !== n2.length) {
+                return false;
+            }
+            for (var i = 0, l = n1.length; i < l; i++) {
+                var k = n1[ i ];
+                if (k !== n2[ i ]) {
+                    return false;
+                }
+                var v1 = o1[ k ], v2 = o2[ k ];
+                if (!this.isEqual(v1, v2)) {
+                    return false;
+                }
+            }
+        } else if (Array.isArray(o1)) {
+            if (!Array.isArray(o2)) {
+                return false;
+            }
+            if (o1.length !== o2.length) {
+                return false;
+            }
+            for (var j = 0, len = o1.length; j < len; j++) {
+                if (!this.isEqual(o1[ j ], o2[ j ])) {
+                    return false;
+                }
+            }
+        } else {
+            if (o1 != o2) {
+                return false;
+            }
+        }
+        return true;
     };
 
     this.PartLength = 3;
@@ -172,6 +333,9 @@ var _Tool = new function () {
     this.DurationType = {
         '1' : 'Whole', '2' : 'Half', '4' : 'Quarter', '8' : 'Eighth', '16' : 'The16th', '32' : 'The32nd'
     };
+    this.DurationKey = this.names(this.DurationType).map(function (v) {
+        return parseInt(v);
+    });
     this.NoteType = {
         'maxima' : -8, 'long' : -4, 'breve' : -2, 'whole' : 1, 'half' : 2, 'quarter' : 4, 'eighth' : 8,
         '16th' : 16, '32nd' : 32, '64th' : 64, '128th' : 128, '256th' : 256, '512th' : 512, '1024th' : 1024
@@ -190,7 +354,8 @@ var _Tool = new function () {
         [ 0, 0, 0, 0, 0, 0, 0 ],
         [ 0, 0, 0, 0, 0, 0, 0 ]
     ];
-    this.STANDARD_C = this.VALUES[ 4 ][ 0 ];
+    this.STANDARD_C = this.VALUES[ 4 ][ 0 ];//Middle C
+
     this.NOTES = [ 'C', 'D', 'E', 'F', 'G', 'A', 'B' ];
 
     this.Tuple = function (index, val) {
@@ -935,16 +1100,28 @@ var SMF = (function () {
     function TR(midi, cfg) {
         var K = _Tool;
 
-        var smf = JSON.parse(midi);
-        smf.track.forEach(function (track) {
-            var time = 0;
-            track.event.forEach(function (event) {
-                event.realTime = time;
-                time += event.deltaTime;
-            });
-        });
+        var smf = (midi !== null && typeof midi === 'object') ? midi : JSON.parse(midi);
 
-        console.log(smf);
+        //https://www.recordingblogs.com/wiki/time-division-of-a-midi-file
+        var division = smf.timeDivision;//PPQN "ticks per beat" (or “pulses per quarter note”)
+        if (Array.isArray(division)) {
+            // TODO Frames per second
+        }
+        var endTick = 0;
+        var tempo = 1000000;
+        var msPerTick = 0;
+        var endTimeMS = 0;
+        var bpm = 0;
+        var durationCount = 0;
+
+        var timeSignature = [];
+        var usingTimeSign = {
+            numerator : 4, //beat per measure
+            denominator : 4 // which note per beat
+        };
+
+        var quartDuration = K.DurationKey[ 2 ], unitDuration = K.DurationKey[ K.DurationKey.length - 1 ];
+        var ppun = division * quartDuration / unitDuration;// pulses per unit note
 
         function Information(smf) {
 
@@ -955,11 +1132,43 @@ var SMF = (function () {
                 NotationTranslater : 'MXLTranslator',
                 NotationCreator : '凤仪(百草谷)',
                 Volume : 1,
-                BeatsPerMeasure : 0,
-                BeatDurationType : '',
+                BeatsPerMeasure : usingTimeSign.numerator,
+                BeatDurationType : K.get(K.DurationType, '' + usingTimeSign.denominator),
                 NumberedKeySignature : 'C',
                 MeasureBeatsPerMinuteMap : new K.Group(),
                 MeasureAlignedCount : 0
+            };
+
+            //http://www.inspiredacoustics.com/en/MIDI_note_numbers_and_center_frequencies
+            //https://newt.phys.unsw.edu.au/jw/notes.html
+            var FULL_NOTES = [ 'C', 'C#'/*Db*/, 'D', 'D#'/*Eb*/, 'E', 'F', 'F#'/*Gb*/, 'G', 'G#'/*Ab*/, 'A', 'A#'/*Bb*/, 'B' ];
+            // C1 = 24, C2 = 36, C3 = 48, C4(*) = 60, C5 = 72, C6 = 84, C7 = 96, C8 = 108, C9 = 120
+            var noteMapping = function (note) {
+                var row = Math.floor(note / 12), index = note % 12;
+                var name = FULL_NOTES[ index ];
+                var sharp = false;
+                if (name.endsWith('#')) {
+                    name = FULL_NOTES[ index - 1 ];
+                    sharp = true;
+                }
+                row -= 1;
+                index = K.NOTES.indexOf(name);
+                var v = K.VALUES[ row ][ index ];
+                return [ v, sharp, index ];
+            };
+
+            var onNotes;
+            var offNote = function (event, number) {
+                var v = number || event.data[ 0 ], e = onNotes[ v ];
+                if (e) {
+                    var period = event.tickBegin - e.tickBegin;
+                    e.tickCount = period;
+                    e.startAtUnit = e.tickBegin / ppun;
+                    e.countAtUnit = period / ppun;
+                    delete onNotes[ v ];
+                    return period;
+                }
+                return 0;
             };
 
             var MetaEvent = {
@@ -975,47 +1184,344 @@ var SMF = (function () {
                     function (event) {
                         K.log('Track name : ' + event.data);
                     },
+                47 ://(0x2F) End Of Track
+                    function (event) {
+                        for (var num in onNotes) {
+                            if (onNotes.hasOwnProperty(num)) {
+                                offNote(event, onNotes[ num ].data[ 0 ]);
+                            }
+                        }
+                        onNotes = {};
+                    },
                 81 ://(0x51) Set Tempo
                     function (event) {//http://www.deluge.co/?q=midi-tempo-bpm
-                        var tempo = event.data;
-                        var bpm = Math.round(60000000 / tempo);
-                        //https://www.recordingblogs.com/wiki/time-division-of-a-midi-file
-                        K.log('Tempo = ' + tempo + ', BPM = ' + bpm);
+                        tempo = event.data;
+                        //http://midi.teragonaudio.com/tech/midifile/ppqn.htm
+                    },
+                88 : //(0x58) Time Signature
+                    function (event) {
+                        if (durationCount++ > 0) {
+                            K.warn('拍号已经出现过,暂时不支持临时变拍');
+                        }
+                        var data = event.data;
+                        //var numerator = data[ 0 ];
+                        //var denominator = data[ 1 ];
+                        //var clocks_per_click = data[ 2 ];
+                        //var notated_32nd_notes_per_beat = data[ 3 ];
+
+                        timeSignature.push({
+                            numerator : data[ 0 ],
+                            denominator : Math.pow(2, data[ 1 ])
+                        });
                     },
                 89 : //(0x59) Key Signature
                     function (event) {//https://www.recordingblogs.com/wiki/midi-key-signature-meta-message
-                        console.log('Key Signature ');
-                        console.log(event.data);
+                        var data = event.data;
+                        var key = data[ 0 ];
+                        console.log('Key = ' + key);
+                        //info.MeasureKeySignatureMap.add(new K.Tuple(0, key));
                     }
             };
 
-            smf.track.forEach(function (track, i) {
-                //K.log('Track index : ' + i);
-                track.event.forEach(function (event) {
-                    if (event.type === 0xFF) {
-                        var me = MetaEvent[ event.metaType ];
-                        if (me) {
-                            me(event);
-                        }
+            smf.track.each(function (track) {
+                onNotes = {};
+                var time = 0, noteTick = 0;
+                track.event.each(function (event) {
+                    time += event.deltaTime;
+                    event.tickBegin = time;
+
+                    switch (event.type) {
+                        case 0xFF://(0xFF) Meta Event
+                            var me = MetaEvent[ event.metaType ];
+                            me && me(event);
+                            break;
+                        case 0x8://(0x8) Note Off
+                            noteTick += offNote(event);
+                            break;
+                        case 0x9://(0x9) Note On
+                            //https://learn.sparkfun.com/tutorials/midi-tutorial/messages
+                            if (event.data[ 1 ] === 0) {//implicit note off
+                                noteTick += offNote(event);
+                            } else {
+                                var d = event.data[ 0 ];
+                                onNotes[ d ] = event;
+                                event.note = noteMapping(d);
+                            }
+                            break;
                     }
                 });
+                track.tick = noteTick;
+                endTick = Math.max(endTick, time);
             });
 
-            if (info.MeasureBeatsPerMinuteMap.size() === 0) {
-                info.MeasureBeatsPerMinuteMap.add(new K.Tuple(0, 120));
+            if (timeSignature.length) {
+                var ts = timeSignature[ 0 ];
+                info.BeatsPerMeasure = ts.numerator;
+                var type = K.get(K.DurationType, ts.denominator + '');
+                if (type) {
+                    info.BeatDurationType = type;
+                } else {
+                    K.log('Beat type ' + ts.denominator + 'is not mapping');
+                }
+                usingTimeSign = ts;
             }
 
+            bpm = Math.round(60000000 / tempo);
+            K.log('Tempo = ' + tempo + ', BPM = ' + bpm);
+
+            if (info.MeasureBeatsPerMinuteMap.size() === 0) {
+                info.MeasureBeatsPerMinuteMap.add(new K.Tuple(0, bpm));
+            }
+
+            var microsecondsPerTick = tempo / division;
+            msPerTick = microsecondsPerTick / 1000;
+
+            endTimeMS = endTick * microsecondsPerTick / 1000000;
+
             return info;
+        }
+
+        function Track(smf) {
+            var Part = function (index) {
+                var instrument = cfg[ 'instrument' + index ] || 'Piano';
+                return {
+                    MeasureKeySignatureMap : new K.Group(),
+                    MeasureClefTypeMap : new K.Group(),
+                    MeasureInstrumentTypeMap : new K.Group().add(new K.Tuple(0, instrument)),
+                    MeasureVolumeCurveMap : new K.Group().add(new K.Tuple(0, [ 1.0, 0.8, 0.4, 0.5, 0.8, 0.7, 0.4, 0.3 ])),
+                    MeasureVolumeMap : new K.Group().add(new K.Tuple(0, 1.0)),
+                    measures : new K.List()
+                };
+            };
+            for (var i = 0; i < K.PartLength; i++) {
+                parts.push(new Part(i));
+            }
+
+            var measureAt = function (partIndex, measureIndex) {
+                var part = parts[ partIndex ];
+                var ms = part.measures;
+                for (var i = ms.size(); i <= measureIndex; i++) {
+                    ms.add({
+                        DurationStampMax : 0,
+                        NotePackCount : 0,
+                        notes : new K.List()
+                    });
+                }
+                return ms.get(measureIndex);
+            };
+
+            var noteDuration = function (beatCount) {
+                var ret = new Array(K.DurationKey.length);
+
+                var reduce = function (val, index) {
+                    if (val > 2 && index > 0) {
+                        var r = Math.floor(val / 2);
+                        ret[ index ] = val - r * 2;
+                        reduce(r, index - 1);
+                    } else {
+                        ret[ index ] = val;
+                    }
+                };
+
+                var max = Math.round(beatCount * unitDuration / beatDuration);
+                reduce(max, K.DurationKey.length - 1);
+                return ret;
+            };
+
+            var partIndex = 0, beatDuration = usingTimeSign.denominator, multiple = unitDuration / beatDuration,
+                beatsPerMeasure = usingTimeSign.numerator, unitPerMeasure = beatsPerMeasure * multiple;
+            smf.track.each(function (track) {
+                if (track.tick < 10) {
+                    return;//have no note
+                }
+                track.event.each(function (event) {
+                    if (!event.tickCount) {
+                        return;//is not note
+                    }
+                    var cau = event.countAtUnit, sau = event.startAtUnit;
+                    var measureIndex = Math.floor(sau / unitPerMeasure);
+                    var relative = sau - measureIndex * unitPerMeasure;
+
+                    var measure = measureAt(partIndex, measureIndex);
+                    measure.notes.add({
+                        note : event.note,
+                        //startAtTick : event.tickBegin, countAtTick : event.tickCount,
+                        startAtUnit : Math.round(relative), countAtUnit : Math.round(cau)
+                    });
+                });
+                if (partIndex++ >= parts.length) {
+                    K.warn('Track count is too many...');
+                    return false;
+                }
+            });
+
+            var Note = function () {
+                return {
+                    IsRest : false,
+                    IsDotted : false,
+                    TieType : null, /*Start End*/
+                    DurationType : 'Quarter',
+                    ArpeggioMode : null, /*Downward Upward*/
+                    Triplet : false,
+                    StampIndex : 0,
+                    PlayingDurationTimeMs : 0,
+                    ClassicPitchSignCount : 0,
+                    ClassicPitchSign : {}
+                };
+            };
+
+            var rest = function (beatCount) {
+                var note = new Note();
+
+                note.IsRest = true;
+
+                var duration = unitDuration / beatCount;
+                var rdt = K.get(K.DurationType, duration + '');
+                if (rdt) {
+                    note.DurationType = rdt;
+                }
+
+                note.ClassicPitchSignCount = 1;
+                note.ClassicPitchSign[ '[' + K.STANDARD_C + ']' ] = {
+                    NumberedSign : 1, PlayingPitchIndex : 1,
+                    AlterantType : K.AlterantType[ 0 ], Volume : 0.0
+                };
+                return note;
+            };
+
+            var track = {}, measureSize = 0, unitDurationType = K.get(K.DurationType, unitDuration + '');
+            parts.each(function (part, pi) {
+                part.MeasureKeySignatureMap.add(new K.Tuple(0, 0));
+                part.MeasureClefTypeMap.add(new K.Tuple(0, 'L2G'));
+
+                var leave = [];
+                part.measures.array().each(function (measure, mi) {
+                    var mark = new Array(unitPerMeasure);//[][]
+
+                    var fill = function (notes) {
+                        var array = [];
+                        notes.each(function (item) {
+                            for (var c = 0; c < item.countAtUnit; c++) {
+                                var i = item.startAtUnit + c;
+                                if (i >= unitPerMeasure) {// 跨小节
+                                    array.push({
+                                        note : item.note,
+                                        startAtUnit : mi * unitPerMeasure,
+                                        countAtUnit : item.startAtUnit + item.countAtUnit - unitPerMeasure
+                                    });
+                                    return;
+                                }
+                                if (!mark[ i ]) {
+                                    mark[ i ] = [];
+                                }
+                                mark[ i ].push(item.note);
+                            }
+                        });
+                        leave = array;
+                    };
+                    fill(leave);
+                    fill(measure.notes.array());
+
+                    var cache = [];
+                    for (var i = 0; i < mark.length; i++) {
+                        var item = mark[ i ];
+                        if (!item || !item.length) {
+                            //list.add(rest(1));
+                            cache.push(rest(1));
+                        } else {
+                            var note = new Note();
+                            note.DurationType = unitDurationType;
+                            note.ClassicPitchSignCount = item.length;
+                            item.each(function (o) {
+                                var num = o[ 0 ], sharp = o[ 1 ], nsi = o[ 2 ];
+                                note.ClassicPitchSign[ '[' + num + ']' ] = {
+                                    NumberedSign : nsi + 1, PlayingPitchIndex : num,
+                                    AlterantType : sharp ? K.AlterantType[ 2 ] : K.AlterantType[ 0 ], Volume : 0.0
+                                };
+                            });
+                            //list.add(note);
+                            cache.push(note);
+                        }
+                    }
+
+                    var reduce = function (count) {
+                        var ret = new Array(K.DurationKey.length);
+                        var calc = function (val, index) {
+                            if (val > 1 && index > 0) {
+                                var r = Math.floor(val / 2);
+                                ret[ index ] = val - r * 2;
+                                calc(r, index - 1);
+                            } else {
+                                ret[ index ] = val;
+                            }
+                        };
+                        calc(count, K.DurationKey.length - 1);
+                        return ret;
+                    };
+
+                    var merge = function (array) {
+                        var list = new K.List();
+
+                        for (var i = 0, len = array.length; i < len;) {
+                            var c = i, o = array[ i ];
+                            while (i++ < len) {
+                                if (!K.isEqual(o, array[ i ])) {
+                                    break;
+                                }
+                            }
+                            var count = i - c;
+                            if (count > 0) {
+                                var ret = reduce(i - c);
+                                ret.each(function (k, ki) {//忽略超过1个全音符的情况....不知道该怎么处理
+                                    if (k > 0) {
+                                        var n = array[ c++ ];
+                                        n.DurationType = K.get(K.DurationType, K.DurationKey[ ki ] + '');
+                                        list.add(n);
+                                    }
+                                });
+                            } else {
+                                list.add(c);
+                            }
+                        }
+                        return list;
+                    };
+                    //merge same notes
+                    var list = merge(cache);
+
+                    measure.notes = list;
+                    measure.NotePackCount = list.size();
+                });
+                if (leave.length) {
+                    //TODO 添加多出来的遗留音符
+                }
+
+                track[ '[' + pi + ']' ] = part;
+
+                measureSize = Math.max(measureSize, part.measures.size());
+            });
+            parts.each(function (part) {
+                var ms = part.measures;
+                for (var c = ms.size(); c < measureSize; c++) {
+                    ms.add({
+                        DurationStampMax : 0, NotePackCount : 0
+                    });
+                }
+            });
+            notation.info.MeasureAlignedCount = measureSize;
+            return track;
         }
 
         var notation = {
             Version : '1.1.0.0'
         };
+        var parts = [];
 
         return {
             translate : function () {
 
                 notation.info = Information(smf);
+                console.log(smf);
+                notation.track = Track(smf);
 
                 var ls = [];
                 ls.push(K.unite('Version', notation.Version));
